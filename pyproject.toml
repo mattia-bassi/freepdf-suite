@@ -8,6 +8,9 @@ authors = [
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
+    "pymupdf (>=1.24,<2.0)",
+    "PySide6 (>=6.6,<7.0)",
+    "asn1crypto (>=1.5,<2.0)",
 ]
 
 
@@ -20,4 +23,16 @@ dev = [
     "pytest (>=9.1.0,<10.0.0)",
     "black (>=26.5.1,<27.0.0)",
     "mypy (>=2.1.0,<3.0.0)"
+]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
 ]
