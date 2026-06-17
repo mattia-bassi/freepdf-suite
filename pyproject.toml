@@ -1,0 +1,23 @@
+[project]
+name = "freepdf-suite"
+version = "0.1.0"
+description = "FreePDF Suite - modular PDF toolkit"
+authors = [
+    {name = "Mattia",email = "mattia83it@hotmail.it"}
+]
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.0,<10.0.0)",
+    "black (>=26.5.1,<27.0.0)",
+    "mypy (>=2.1.0,<3.0.0)"
+]

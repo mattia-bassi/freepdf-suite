@@ -1,0 +1,130 @@
+# PromptOps context snapshot
+.promptops/
+
+# PromptOps session assets
+.promptops-assets/
+
+# Claude Code local settings (per-machine permissions)
+.claude/settings.local.json
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Type checkers / linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Poetry
+poetry.lock.bak
+
+# IDEs / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Qt6 / PySide6 / PyQt6
+# ---------------------------------------------------------------------------
+# Compiled UI / resources from .ui and .qrc files
+ui_*.py
+*_ui.py
+*_rc.py
+qrc_*.py
+resources_rc.py
+
+# Generated translation binaries (keep .ts sources)
+*.qm
+
+# Qt Creator / qmake build artifacts
+*.pro.user
+*.pro.user.*
+Makefile
+Makefile.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.obj
+*.o
+
+# Qt cache
+.qmlls.ini
+.qtc_clangd/
