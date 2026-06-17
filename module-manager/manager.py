@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,8 +25,16 @@ from core.errors import (
     ModuleNotFoundError,
 )
 
-from manifest_schema import ModuleManifest, validate_manifest
-from plugin_api import ModulePlugin, ModuleRequest, ModuleResult
+# WIRING (Wave-3 Integrator): this file is loaded by path via
+# ``spec_from_file_location`` (contract §2.1), so its sibling modules are NOT on
+# ``sys.path``. Make this directory importable so the bare sibling imports below
+# resolve regardless of who loads us. No signatures/APIs change.
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from manifest_schema import ModuleManifest, validate_manifest  # noqa: E402
+from plugin_api import ModulePlugin, ModuleRequest, ModuleResult  # noqa: E402
 
 if TYPE_CHECKING:
     from core.pdf_engine import PDFEngine
