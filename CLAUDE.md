@@ -9,10 +9,35 @@ A detailed JSON project map is available at `.promptops/project-context.json` â€
 
 ## Project
 - **Name**: PDFFreeSuite
+- **Framework**: python (python)
+- **Tests**: pytest (~7 test files)
+- **Domains**: config
 
 ## Directory Structure
 ```
+assets/
+  ... (2 more files)
+config/
+  README.md
+  ... (3 more files)
+core/
+  README.md
+  ... (5 more files)
+docs/
+  README.md
+  ... (1 more files)
+scripts/
+  README.md
+  ... (3 more files)
+tests/
+  README.md
+  ... (8 more files)
+ui/
+  README.md
+  ... (15 more files)
 CLAUDE.md
+pyproject.toml
+README.md
 ```
 
 <!-- /PROMPTOPS:CONTEXT -->

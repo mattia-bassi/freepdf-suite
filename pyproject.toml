@@ -1,7 +1,7 @@
 [project]
 name = "freepdf-suite"
 version = "0.1.0"
-description = "FreePDF Suite - modular PDF toolkit"
+description = "FreePDF Suite - PDF reader"
 authors = [
     {name = "Mattia",email = "mattia83it@hotmail.it"}
 ]
@@ -11,8 +11,13 @@ dependencies = [
     "pymupdf (>=1.24,<2.0)",
     "PySide6 (>=6.6,<7.0)",
     "asn1crypto (>=1.5,<2.0)",
+    "qt-material (>=2.17,<3.0)",
 ]
 
+
+[tool.poetry]
+# Multi-folder app (core/, ui/), not a single importable package.
+package-mode = false
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -22,7 +27,8 @@ build-backend = "poetry.core.masonry.api"
 dev = [
     "pytest (>=9.1.0,<10.0.0)",
     "black (>=26.5.1,<27.0.0)",
-    "mypy (>=2.1.0,<3.0.0)"
+    "mypy (>=2.1.0,<3.0.0)",
+    "pyinstaller (>=6.0,<7.0)"
 ]
 
 [tool.pytest.ini_options]

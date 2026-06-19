@@ -1,0 +1,18 @@
+{
+  "theme": "light",
+  "language": "it",
+  "default_folder": "",
+  "recent_files_limit": 10,
+  "open_last_file_on_startup": false,
+  "default_zoom": "1.0",
+  "default_view_mode": "continuous_scroll",
+  "show_thumbnails_on_startup": true,
+  "render_dpi": 96,
+  "encrypted_pdf": "always_ask",
+  "p7m_files": "always_extract",
+  "missing_fonts": "use_substitutes",
+  "prerender_buffer_pages": 2,
+  "rendering_quality": "normal",
+  "enable_error_log": false,
+  "zoom_default": 1.0
+}

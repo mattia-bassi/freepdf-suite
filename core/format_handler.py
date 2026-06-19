@@ -60,8 +60,8 @@ class FormatHandler:
                 return bytes(data)
         except ImportError:
             pass  # fall through to byte-scan heuristic
-        except Exception as exc:  # noqa: BLE001
-            raise P7MExtractionError(f"Malformed P7M envelope: {exc}") from exc
+        except Exception:
+            pass  # malformed CMS — try embedded PDF scan below
 
         start = raw.find(_PDF_MAGIC)
         if start == -1:

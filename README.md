@@ -1,43 +1,62 @@
-# FreePDF Suite
+<p align="center">
+  <img src="assets/logo.png" alt="FreePDF Suite logo" width="96">
+</p>
 
-A free, open-source, modular desktop PDF toolkit built with Python 3.11+ and Qt6.
+<h1 align="center">FreePDF Suite</h1>
 
-## Project Layout
+<p align="center">Free and open source PDF reader for Windows</p>
 
-| Folder            | Purpose                                                    |
-| ----------------- | ---------------------------------------------------------- |
-| `core/`           | Core engine and shared services (PDF I/O, document model). |
-| `modules/`        | Feature modules (merge, split, OCR, compress, etc.).       |
-| `ui/`             | Qt6 user interface (windows, widgets, dialogs).            |
-| `module-manager/` | Module discovery, registration, and lifecycle management.  |
-| `docs/`           | User and developer documentation.                          |
-| `tests/`          | Pytest test suite.                                         |
-| `scripts/`        | Developer and build scripts.                               |
-| `config/`         | Default configuration and schemas.                         |
+<p align="center">
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License MIT">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/Platform-Windows-lightgrey.svg" alt="Platform Windows">
+</p>
 
-## Requirements
+---
 
-- Python **3.11+**
-- [Poetry](https://python-poetry.org/) for dependency management
+FreePDF Suite is a lightweight desktop PDF reader built with Python and Qt6. It opens standard PDFs and signed P7M files, renders pages on demand, and ships with search, thumbnails, and multi-language UI.
+
+## Features
+
+- PDF and P7M reading (signed Italian electronic documents)
+- Lazy page rendering for smooth scrolling on large files
+- In-document text search with match navigation
+- Page thumbnail sidebar
+- UI in English, Italian, French, German, Spanish, and Portuguese
+- Portable Windows build via PyInstaller
 
 ## Getting Started
 
+Requires Python **3.11+** and [Poetry](https://python-poetry.org/).
+
 ```bash
-# Install dependencies (including dev tools)
 poetry install
-
-# Activate the virtual environment
-poetry shell
-
-# Run the test suite
-poetry run pytest
-
-# Format the codebase
-poetry run black .
-
-# Type-check
-poetry run mypy .
+poetry run python -m ui
 ```
+
+Run the test suite:
+
+```bash
+poetry run pytest
+```
+
+## Building the portable exe
+
+```bash
+poetry run python scripts/build.py
+```
+
+The executable is written to `dist/`.
+
+## Project layout
+
+| Folder | Purpose |
+| --- | --- |
+| `core/` | PDF engine (PyMuPDF), format handlers |
+| `ui/` | Qt6 application shell, dialogs, styling |
+| `config/` | Default settings |
+| `tests/` | Pytest suite |
+| `scripts/` | Build and developer utilities |
 
 ## License
 

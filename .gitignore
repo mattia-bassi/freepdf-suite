@@ -7,6 +7,9 @@
 # Claude Code local settings (per-machine permissions)
 .claude/settings.local.json
 
+# OpenCode local npm dependencies
+.opencode/node_modules/
+
 # ---------------------------------------------------------------------------
 # Python
 # ---------------------------------------------------------------------------

@@ -1,8 +1,7 @@
 """FreePDF Suite exception hierarchy (contract §8).
 
 Single base ``FreePDFError`` so callers can ``except FreePDFError``. Each class
-carries an ``error_code`` string in SCREAMING_SNAKE_CASE that mirrors the
-``error_code`` used on ``ModuleResult.fail``.
+carries an ``error_code`` string in SCREAMING_SNAKE_CASE.
 """
 
 from __future__ import annotations
@@ -50,24 +49,3 @@ class P7MExtractionError(FormatError):
 
 class PDFAConversionError(FormatError):
     error_code = "PDFA_CONVERSION_ERROR"
-
-
-# --- module layer -----------------------------------------------------------
-class ModuleError(FreePDFError):
-    error_code = "MODULE_ERROR"
-
-
-class ModuleNotFoundError(ModuleError):
-    error_code = "MODULE_NOT_FOUND_ERROR"
-
-
-class ModuleLoadError(ModuleError):
-    error_code = "MODULE_LOAD_ERROR"
-
-
-class ManifestError(ModuleError):
-    error_code = "MANIFEST_ERROR"
-
-
-class ModuleExecutionError(ModuleError):
-    error_code = "MODULE_EXECUTION_ERROR"

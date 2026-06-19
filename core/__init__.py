@@ -11,6 +11,7 @@ from .models import (
     DocumentMetadata,
     PageInfo,
     RenderedPage,
+    SearchHit,
 )
 from .pdf_engine import PDFEngine
 
@@ -27,4 +28,5 @@ __all__ = [
     "DocumentMetadata",
     "PageInfo",
     "RenderedPage",
+    "SearchHit",
 ]

@@ -54,3 +54,18 @@ class RenderedPage:
     width_px: int
     height_px: int
     image_format: str = "png"  # "png" | "ppm"
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    """A text-search match on a single page (rect in PDF points)."""
+
+    page_index: int
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @property
+    def rect(self) -> tuple[float, float, float, float]:
+        return (self.x0, self.y0, self.x1, self.y1)

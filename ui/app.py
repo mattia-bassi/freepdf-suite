@@ -3,20 +3,34 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from .bootstrap import configure_application, init_language, init_windows_app_id
 from .main_window import MainWindow
-from .style import APP_STYLESHEET
+from .splash_screen import BrandedSplashScreen
 
 
 def run(argv: list[str] | None = None) -> int:
-    app = QApplication(argv if argv is not None else sys.argv)
+    args = list(argv if argv is not None else sys.argv)
+    init_windows_app_id()
+    app = QApplication(args)
     app.setApplicationName("FreePDF Suite")
-    app.setStyleSheet(APP_STYLESHEET)
+    init_language()
+    configure_application(app)
 
-    window = MainWindow()
+    splash = BrandedSplashScreen.show_while_loading(app)
+
+    initial: Path | None = None
+    if len(args) > 1:
+        candidate = Path(args[1])
+        if candidate.is_file():
+            initial = candidate
+
+    window = MainWindow(initial_path=initial)
     window.show()
+    splash.finish(window)
     return app.exec()
 
 
