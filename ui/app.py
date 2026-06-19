@@ -7,6 +7,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from core.ocr_engine import cleanup_ocr_temp_files
+
 from .bootstrap import configure_application, init_language, init_windows_app_id
 from .main_window import MainWindow
 from .splash_screen import BrandedSplashScreen
@@ -19,6 +21,7 @@ def run(argv: list[str] | None = None) -> int:
     app.setApplicationName("FreePDF Suite")
     init_language()
     configure_application(app)
+    app.aboutToQuit.connect(cleanup_ocr_temp_files)
 
     splash = BrandedSplashScreen.show_while_loading(app)
 

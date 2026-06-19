@@ -410,12 +410,63 @@ QStatusBar#appStatusBar QLabel {{
 QStatusBar#appStatusBar[flash="true"] QLabel {{
     color: {INTERACTION_BORDER};
 }}
+QProgressBar#ocrStatusProgress {{
+    background: {NAV_SEGMENT_BG};
+    border: none;
+    border-radius: 6px;
+    height: 10px;
+    text-align: center;
+    color: {TEXT_PRIMARY};
+    font-size: 11px;
+    margin-right: 8px;
+}}
+QProgressBar#ocrStatusProgress::chunk {{
+    background: {NAV_TAB_ACTIVE_BG};
+    border-radius: 6px;
+}}
+QWidget#ocrProcessingOverlay {{
+    background: rgba(10, 10, 12, 160);
+}}
+QWidget#ocrProcessingPanel {{
+    background: #1f1f23;
+    border: 1px solid #3a3a3e;
+    border-radius: 12px;
+}}
+QLabel#ocrProcessingMessage {{
+    color: {TEXT_PRIMARY};
+    font-size: 14px;
+    font-weight: 600;
+}}
 
 QDialog#generalSettingsDialog,
 QDialog#optionsDialog,
-QDialog#settingsStubDialog {{
+QDialog#settingsStubDialog,
+QDialog#ocrDialog {{
     background: #1f1f23;
     color: {TEXT_PRIMARY};
+    border-radius: 12px;
+}}
+QLabel#ocrDialogTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: 16px;
+    font-weight: bold;
+}}
+QLabel#ocrMissingMessage,
+QLabel#ocrProgressLabel {{
+    color: {TEXT_SECONDARY};
+    font-size: 13px;
+}}
+QProgressBar#ocrProgressBar {{
+    background: {NAV_SEGMENT_BG};
+    border: none;
+    border-radius: 6px;
+    height: 8px;
+    text-align: center;
+    color: transparent;
+}}
+QProgressBar#ocrProgressBar::chunk {{
+    background: {NAV_TAB_ACTIVE_BG};
+    border-radius: 6px;
 }}
 QLabel#settingsSectionTitle {{
     color: {TEXT_PRIMARY};

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QImage, QPixmap
+from PySide6.QtGui import QColor, QDragEnterEvent, QDragMoveEvent, QDropEvent, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
@@ -17,7 +17,17 @@ from PySide6.QtWidgets import (
 
 from .file_drop import accept_file_drag, enable_file_drops, path_from_drop
 from .i18n import tr
+from .ocr_overlay import OcrProcessingOverlay
+from .page_geometry import (
+    PageDisplayMetrics,
+    metrics_from_render,
+    pdf_rect_to_widget,
+    widget_drag_rect_to_pdf,
+    widget_point_to_pdf,
+    widget_point_to_pdf_clamped,
+)
 from .page_render_queue import PageRenderQueue
+from .page_view_label import PageViewLabel
 from .style import INTERACTION_BORDER, TEXT_SECONDARY
 from .thumbnail_panel import ThumbnailPanel
 from .visual_effects import search_rim_glow
@@ -60,8 +70,9 @@ class PdfReaderWidget(QWidget):
         self._search_query = ""
         self._search_hits: list[Any] = []
         self._active_hit = -1
-        self._page_labels: dict[int, QLabel] = {}
+        self._page_labels: dict[int, PageViewLabel] = {}
         self._page_pixmaps: dict[int, QPixmap] = {}
+        self._page_display_metrics: dict[int, PageDisplayMetrics] = {}
         self._updating_page = False
         self._queue = PageRenderQueue()
         self._render_timer = QTimer(self)
@@ -126,6 +137,17 @@ class PdfReaderWidget(QWidget):
 
         self._scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
+        copy_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy_shortcut.activated.connect(self.copy_selection)
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc_shortcut.activated.connect(self.clear_selection)
+
+        self._ocr_overlay = OcrProcessingOverlay(self)
+        self._ocr_overlay.hide()
+
     def _emit_dropped_file(self, path: Path) -> None:
         self.file_dropped.emit(path)
 
@@ -179,6 +201,7 @@ class PdfReaderWidget(QWidget):
         self._search_query = ""
         self._search_hits = []
         self._active_hit = -1
+        self.clear_selection()
         self._current_page = 0
         self._fit_mode = None
         self.fit_mode_changed.emit(None)
@@ -200,9 +223,9 @@ class PdfReaderWidget(QWidget):
 
         dpi = self._effective_dpi()
         for index in range(page_count):
-            label = QLabel()
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setProperty("page_index", index)
+            label = PageViewLabel(index, reader=self)
+            label.setMargin(0)
+            label.setContentsMargins(0, 0, 0, 0)
             try:
                 info = self._engine.page_info(doc, index)
                 height_px = max(80, int(info.height * dpi / 72.0))
@@ -289,10 +312,117 @@ class PdfReaderWidget(QWidget):
         self._go_to_hit(self._active_hit)
         return True
 
+    def words_for_page(self, page_index: int) -> list[tuple[tuple[float, float, float, float], str]]:
+        if self._engine is None or self._doc is None:
+            return []
+        try:
+            return self._engine.get_text_words(self._doc, page_index)
+        except Exception:
+            return []
+
+    def widget_point_to_pdf(self, page_index: int, x: float, y: float) -> tuple[float, float]:
+        metrics, origin_x, origin_y, pix_w, pix_h = self._page_display_state(page_index)
+        return widget_point_to_pdf_clamped(x, y, metrics, origin_x, origin_y, pix_w, pix_h)
+
+    def widget_drag_rect_to_pdf(
+        self, page_index: int, x0: float, y0: float, x1: float, y1: float
+    ) -> tuple[float, float, float, float]:
+        metrics, origin_x, origin_y, pix_w, pix_h = self._page_display_state(page_index)
+        return widget_drag_rect_to_pdf(x0, y0, x1, y1, metrics, origin_x, origin_y, pix_w, pix_h)
+
+    def pdf_rect_to_widget(
+        self, page_index: int, rect: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float] | None:
+        metrics, origin_x, origin_y, _pw, _ph = self._page_display_state(page_index)
+        return pdf_rect_to_widget(rect, metrics, origin_x, origin_y)
+
+    def _page_display_state(self, page_index: int) -> tuple[PageDisplayMetrics, float, float, int, int]:
+        label = self._page_labels.get(page_index)
+        if label is None:
+            dpi = self._effective_dpi()
+            pix_w = max(1, int(612 * dpi / 72))
+            pix_h = max(1, int(792 * dpi / 72))
+            return PageDisplayMetrics(612.0, 792.0, pix_w, pix_h), 0.0, 0.0, pix_w, pix_h
+
+        pixmap = label.pixmap()
+        if pixmap is None or pixmap.isNull():
+            pixmap = self._page_pixmaps.get(page_index)
+
+        if pixmap is not None and not pixmap.isNull() and self._engine is not None and self._doc is not None:
+            info = self._engine.page_info(self._doc, page_index)
+            metrics = metrics_from_render(
+                info.width,
+                info.height,
+                pixmap.width(),
+                pixmap.height(),
+            )
+            pix_w = pixmap.width()
+            pix_h = pixmap.height()
+        else:
+            metrics = self._page_display_metrics.get(page_index)
+            if metrics is None:
+                metrics = self._fallback_page_metrics(page_index)
+            pix_w = metrics.pixmap_width_px
+            pix_h = metrics.pixmap_height_px
+
+        origin_x, origin_y = self._pixmap_origin(label, pixmap)
+        return metrics, origin_x, origin_y, pix_w, pix_h
+
+    def _fallback_page_metrics(self, page_index: int) -> PageDisplayMetrics:
+        dpi = self._effective_dpi()
+        if self._engine is None or self._doc is None:
+            return PageDisplayMetrics(612.0, 792.0, max(1, int(612 * dpi / 72)), max(1, int(792 * dpi / 72)))
+        info = self._engine.page_info(self._doc, page_index)
+        return metrics_from_render(
+            info.width,
+            info.height,
+            max(1, int(info.width * dpi / 72.0)),
+            max(1, int(info.height * dpi / 72.0)),
+        )
+
+    def _pixmap_origin(self, label: PageViewLabel, pixmap: QPixmap | None) -> tuple[float, float]:
+        if pixmap is None or pixmap.isNull():
+            return 0.0, 0.0
+        contents = label.contentsRect()
+        origin_x = float(contents.x()) + (float(contents.width()) - float(pixmap.width())) / 2.0
+        origin_y = float(contents.y()) + (float(contents.height()) - float(pixmap.height())) / 2.0
+        return origin_x, origin_y
+
+    def clear_selection(self, *, except_page: int | None = None) -> None:
+        for index, label in self._page_labels.items():
+            if except_page is not None and index == except_page:
+                continue
+            label.clear_selection()
+
+    def copy_selection(self) -> None:
+        for label in self._page_labels.values():
+            if label.has_selection() and label.copy_selection():
+                return
+
+    def _widget_to_pdf_scale(self, page_index: int) -> float:
+        """Backward-compatible helper returning horizontal PDF points per pixel."""
+        metrics, _, _, _, _ = self._page_display_state(page_index)
+        return metrics.scale_x
+
+    def _pixmap_offset(self, page_index: int) -> tuple[float, float]:
+        label = self._page_labels.get(page_index)
+        if label is None:
+            return 0.0, 0.0
+        return self._pixmap_origin(label, self._page_pixmaps.get(page_index))
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
+        self._ocr_overlay.resize_with_parent()
         if self._fit_mode is not None:
             self._apply_fit()
+
+    def show_ocr_progress(self, current: int, total: int) -> None:
+        self._ocr_overlay.set_progress(current, total)
+        if not self._ocr_overlay.isVisible():
+            self._ocr_overlay.show_overlay()
+
+    def hide_ocr_progress(self) -> None:
+        self._ocr_overlay.hide_overlay()
 
     # -- drag & drop ---------------------------------------------------------
 
@@ -346,6 +476,7 @@ class PdfReaderWidget(QWidget):
                 widget.deleteLater()
         self._page_labels.clear()
         self._page_pixmaps.clear()
+        self._page_display_metrics.clear()
         self._layout.addWidget(self._placeholder)
         self._refresh_empty_state()
         self._placeholder.show()
@@ -446,9 +577,19 @@ class PdfReaderWidget(QWidget):
             )
             image = QImage.fromData(rendered.image_bytes, "PNG")
             pixmap = QPixmap.fromImage(image)
+            pixmap.setDevicePixelRatio(1.0)
+            info = self._engine.page_info(self._doc, page_index)
+            self._page_display_metrics[page_index] = metrics_from_render(
+                info.width,
+                info.height,
+                pixmap.width(),
+                pixmap.height(),
+            )
             self._page_pixmaps[page_index] = pixmap
             label.setPixmap(pixmap)
-            label.setMinimumSize(pixmap.size())
+            label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            label.setFixedSize(pixmap.size())
+            label.update()
         except Exception as exc:
             label.setText(f"[page {page_index + 1} failed: {exc}]")
 
@@ -456,9 +597,13 @@ class PdfReaderWidget(QWidget):
         self._render_timer.stop()
         self._queue.invalidate_all()
         self._page_pixmaps.clear()
+        self._page_display_metrics.clear()
+        for label in self._page_labels.values():
+            label.invalidate_word_cache()
         dpi = self._effective_dpi()
         for index, label in self._page_labels.items():
             label.clear()
+            label.setMaximumSize(16777215, 16777215)
             if self._engine is not None and self._doc is not None:
                 try:
                     info = self._engine.page_info(self._doc, index)

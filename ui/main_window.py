@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDragMoveEvent, QDropEvent, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QProgressBar,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -38,6 +39,14 @@ from .tools_dialogs import (
 from .toolbar_widgets import ReaderToolStrip, TopNavBar
 from .visual_effects import popup_shadow
 
+from core.ocr_engine import (
+    DEFAULT_OCR_DPI,
+    DEFAULT_OCR_LANGUAGE,
+    check_tesseract_available,
+    create_temp_ocr_output_path,
+    run_ocr_on_pdf,
+)
+
 ZOOM_PRESETS: list[tuple[str, float]] = [
     ("10%", 0.1),
     ("25%", 0.25),
@@ -49,6 +58,36 @@ ZOOM_PRESETS: list[tuple[str, float]] = [
     ("200%", 2.0),
     ("400%", 4.0),
 ]
+
+
+class _OcrWorker(QThread):
+    """Run searchable-PDF OCR off the UI thread."""
+
+    progress = Signal(int, int)
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, *, pdf_path: Path, pdf_bytes: bytes | None, dpi: int) -> None:
+        super().__init__()
+        self._pdf_path = pdf_path
+        self._pdf_bytes = pdf_bytes
+        self._dpi = dpi
+        self._output_path = create_temp_ocr_output_path(pdf_path, "searchable_pdf")
+
+    def run(self) -> None:
+        try:
+            run_ocr_on_pdf(
+                self._pdf_path,
+                self._output_path,
+                "searchable_pdf",
+                DEFAULT_OCR_LANGUAGE,
+                self._dpi,
+                progress_callback=self.progress.emit,
+                pdf_bytes=self._pdf_bytes,
+            )
+            self.succeeded.emit(self._output_path)
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
 
 
 class MainWindow(QMainWindow):
@@ -74,7 +113,7 @@ class MainWindow(QMainWindow):
         self._action_exit: QAction | None = None
         self._action_zoom_in: QAction | None = None
         self._action_zoom_out: QAction | None = None
-        self._modules_placeholder: QAction | None = None
+        self._action_ocr: QAction | None = None
         self._action_general_settings: QAction | None = None
         self._action_view_settings: QAction | None = None
         self._action_advanced_options: QAction | None = None
@@ -92,6 +131,7 @@ class MainWindow(QMainWindow):
         self._options_menu: QMenu | None = None
         self._help_menu: QMenu | None = None
         self._doc_open = False
+        self._ocr_worker: _OcrWorker | None = None
         self._unregister_i18n = register_retranslate(self.retranslate_ui)
 
         self._reader = PdfReaderWidget(self._config, self)
@@ -110,6 +150,13 @@ class MainWindow(QMainWindow):
         self._update_page_controls()
         status = self.statusBar()
         status.setObjectName("appStatusBar")
+        self._ocr_status_progress = QProgressBar(self)
+        self._ocr_status_progress.setObjectName("ocrStatusProgress")
+        self._ocr_status_progress.setFixedWidth(180)
+        self._ocr_status_progress.setMaximumHeight(14)
+        self._ocr_status_progress.setTextVisible(True)
+        self._ocr_status_progress.hide()
+        status.addPermanentWidget(self._ocr_status_progress)
         self._show_status(self._ready_message(), flash=False)
 
         if initial_path is not None:
@@ -182,8 +229,10 @@ class MainWindow(QMainWindow):
             self._action_next_page.setText("&" + tr("next_page"))
         if self._action_previous_page is not None:
             self._action_previous_page.setText("&" + tr("previous_page"))
-        if self._modules_placeholder is not None:
-            self._modules_placeholder.setText(tr("no_modules_installed"))
+        if self._action_ocr is not None:
+            self._action_ocr.setText(tr("ocr_title"))
+            if not self._action_ocr.isEnabled():
+                self._action_ocr.setToolTip(tr("ocr_requires_open_document"))
         if self._action_general_settings is not None:
             self._action_general_settings.setText(tr("general_settings"))
         if self._action_view_settings is not None:
@@ -346,9 +395,11 @@ class MainWindow(QMainWindow):
         )
 
         self._tools_menu = QMenu("&" + tr("tools"), self)
-        self._modules_placeholder = QAction(tr("no_modules_installed"), self)
-        self._modules_placeholder.setEnabled(False)
-        self._tools_menu.addAction(self._modules_placeholder)
+        self._action_ocr = QAction(tr("ocr_title"), self)
+        self._action_ocr.setEnabled(False)
+        self._action_ocr.setToolTip(tr("ocr_requires_open_document"))
+        self._action_ocr.triggered.connect(self._on_ocr)
+        self._tools_menu.addAction(self._action_ocr)
 
         self._pdf_menu = QMenu("&" + tr("pdf"), self)
         self._action_encrypted_pdf = self._pdf_menu.addAction(
@@ -482,6 +533,87 @@ class MainWindow(QMainWindow):
         self._show_status(tr("status_opened").replace("{filename}", title))
         self._recent.add(path)
         self._refresh_recent_menu()
+        self._update_doc_dependent_actions()
+
+    def _pdf_bytes_for_ocr(self) -> bytes | None:
+        """Return in-memory PDF bytes for OCR when the open document is not a plain file."""
+        if self._doc is None:
+            return None
+        handle = getattr(self._doc, "_handle", None)
+        if handle is None:
+            return None
+        try:
+            return handle.tobytes()
+        except Exception:
+            return None
+
+    def _on_ocr(self) -> None:
+        if not self._doc_open or self._doc is None:
+            show_warning(self, tr("ocr_requires_open_document"))
+            return
+        if self._ocr_worker is not None and self._ocr_worker.isRunning():
+            return
+        if not check_tesseract_available():
+            show_critical(self, tr("ocr_not_bundled"))
+            return
+
+        self._action_ocr.setEnabled(False)
+        self._begin_ocr_progress(0, 1)
+
+        render_dpi = int(self._config.get("render_dpi", DEFAULT_OCR_DPI))
+        self._ocr_worker = _OcrWorker(
+            pdf_path=self._doc.path,
+            pdf_bytes=self._pdf_bytes_for_ocr(),
+            dpi=render_dpi,
+        )
+        self._ocr_worker.progress.connect(self._on_ocr_progress)
+        self._ocr_worker.succeeded.connect(self._on_ocr_succeeded)
+        self._ocr_worker.failed.connect(self._on_ocr_failed)
+        self._ocr_worker.finished.connect(self._on_ocr_finished)
+        self._ocr_worker.start()
+
+    def _on_ocr_progress(self, current: int, total: int) -> None:
+        self._begin_ocr_progress(current, total)
+
+    def _begin_ocr_progress(self, current: int, total: int) -> None:
+        maximum = max(1, total)
+        value = min(current, maximum)
+        percent = int(round(100 * value / maximum))
+        message = (
+            tr("ocr_status_running")
+            .replace("{current}", str(current))
+            .replace("{total}", str(total))
+        )
+        self._show_status(message, flash=False)
+        self._ocr_status_progress.setMaximum(maximum)
+        self._ocr_status_progress.setValue(value)
+        self._ocr_status_progress.setFormat(f"{percent}%")
+        self._ocr_status_progress.show()
+        self._reader.show_ocr_progress(current, total)
+
+    def _end_ocr_progress(self) -> None:
+        self._ocr_status_progress.hide()
+        self._reader.hide_ocr_progress()
+
+    def _on_ocr_succeeded(self, output_path: object) -> None:
+        self._end_ocr_progress()
+        self._open_path(Path(output_path))
+        self._show_status(tr("ocr_status_completed"), flash=True)
+
+    def _on_ocr_failed(self, _message: str) -> None:
+        self._end_ocr_progress()
+        show_critical(self, tr("ocr_error_generic"))
+
+    def _on_ocr_finished(self) -> None:
+        self._end_ocr_progress()
+        self._update_doc_dependent_actions()
+
+    def _update_doc_dependent_actions(self) -> None:
+        if self._action_ocr is None:
+            return
+        enabled = self._doc_open and self._doc is not None
+        self._action_ocr.setEnabled(enabled)
+        self._action_ocr.setToolTip("" if enabled else tr("ocr_requires_open_document"))
 
     def _refresh_recent_menu(self) -> None:
         if self._recent_menu is None:

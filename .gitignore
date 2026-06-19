@@ -128,6 +128,10 @@ ui_*.h
 *.obj
 *.o
 
-# Qt cache
-.qmlls.ini
+# Bundled Tesseract OCR binaries (large; see docs/TESSERACT_SETUP.md)
+tesseract/
+
+# OCR temp outputs (cleaned on app exit)
+temp/
+
 .qtc_clangd/

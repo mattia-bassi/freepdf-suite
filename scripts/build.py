@@ -8,6 +8,7 @@ Output layout (onedir)::
         _internal/     # bundled dependencies (do not edit)
         config/        # defaults + recent_files.json
         assets/        # logo and static resources
+        tesseract/     # bundled OCR binary + tessdata (optional at build time)
 
 Run from the repository root::
 
@@ -69,6 +70,10 @@ def _pyinstaller_cmd() -> list[str]:
         "ui.main_window",
         "--hidden-import",
         "ui.pdf_reader",
+        "--hidden-import",
+        "core.ocr_engine",
+        "--hidden-import",
+        "pytesseract",
         "--collect-all",
         "PySide6",
         "--collect-all",
@@ -81,11 +86,14 @@ def _pyinstaller_cmd() -> list[str]:
     return cmd
 
 
-def _copy_external_tree(name: str) -> None:
-    """Copy ``config/`` or ``assets/`` next to the exe (outside ``_internal``)."""
+def _copy_external_tree(name: str, *, required: bool = True) -> None:
+    """Copy ``config/``, ``assets/``, or optional ``tesseract/`` next to the exe."""
     source = ROOT / name
     if not source.is_dir():
-        raise SystemExit(f"Missing required folder: {source}")
+        if required:
+            raise SystemExit(f"Missing required folder: {source}")
+        print(f"Skipping {name}/ (not found — optional)")
+        return
     target = APP_DIR / name
     if target.exists():
         shutil.rmtree(target)
@@ -103,9 +111,12 @@ def main() -> int:
 
     _copy_external_tree("config")
     _copy_external_tree("assets")
+    _copy_external_tree("tesseract", required=False)
 
     print(f"\nBuild complete: {APP_DIR / 'FreePDFSuite.exe'}")
     print("Edit config/ beside the exe without rebuilding.")
+    if not (APP_DIR / "tesseract").is_dir():
+        print("Note: tesseract/ was not bundled — OCR will only work if Tesseract is on PATH.")
     return 0
 
 

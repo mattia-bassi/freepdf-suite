@@ -30,6 +30,7 @@ from .models import (
     RenderedPage,
     SearchHit,
 )
+from .text_selection import WordEntry
 
 Rect = tuple[float, float, float, float]
 
@@ -199,6 +200,24 @@ class PDFEngine:
                     )
                 )
         return hits
+
+    def get_text_words(self, doc: Document, page_index: int) -> list[WordEntry]:
+        """Return word bounding boxes and text for one page (native or OCR text layer)."""
+        page = self._page(doc, page_index)
+        raw_words = page.get_text("words")
+        words: list[WordEntry] = []
+        for entry in raw_words:
+            if len(entry) < 5:
+                continue
+            text = str(entry[4]).strip()
+            if not text:
+                continue
+            rect = (float(entry[0]), float(entry[1]), float(entry[2]), float(entry[3]))
+            block = int(entry[5]) if len(entry) > 5 else 0
+            line = int(entry[6]) if len(entry) > 6 else 0
+            word_no = int(entry[7]) if len(entry) > 7 else 0
+            words.append((rect, text, block, line, word_no))
+        return words
 
     def export_pages_as_png(
         self,
