@@ -4,6 +4,7 @@
   "default_folder": "",
   "recent_files_limit": 10,
   "open_last_file_on_startup": false,
+  "open_last_session": false,
   "default_zoom": "1.0",
   "default_view_mode": "continuous_scroll",
   "show_thumbnails_on_startup": true,

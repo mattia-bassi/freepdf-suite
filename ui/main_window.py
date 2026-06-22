@@ -30,7 +30,13 @@ from PySide6.QtWidgets import (
 )
 
 from .bootstrap import LOGO_PATH, load_backend
-from .config_loader import load_app_config, recent_files_path
+from .config_loader import (
+    load_app_config,
+    load_session_paths,
+    recent_files_path,
+    save_session_paths,
+)
+from .document_manager import DocumentManager, DocumentState
 from .file_drop import accept_file_drag, enable_file_drops, path_from_drop
 from .floating_card import FloatingCard
 from .i18n import register_retranslate, tr
@@ -51,6 +57,8 @@ from .tools_dialogs import (
     show_options,
     show_view_settings,
 )
+from .tab_bar import DocumentTabBar
+from .thumbnail_panel import ThumbnailPanel
 from .toolbar_widgets import ReaderToolStrip, TopNavBar
 from .visual_effects import popup_shadow
 
@@ -110,9 +118,6 @@ class _OcrWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self, *, initial_path: Path | None = None) -> None:
         super().__init__()
-        self._open_filename: str | None = None
-        self._page_manager: PageManager | None = None
-        self._update_window_title()
         self.resize(1200, 850)
         if LOGO_PATH.is_file():
             self.setWindowIcon(QIcon(str(LOGO_PATH)))
@@ -121,10 +126,6 @@ class MainWindow(QMainWindow):
         self._config = load_app_config()
         self._backend = load_backend()
         self._engine = self._make_engine()
-        self._page_manager = (
-            PageManager(self._engine) if self._engine is not None else None
-        )
-        self._doc: Any = None
         self._recent = RecentFilesStore(
             recent_files_path(),
             limit=int(self._config.get("recent_files_limit", 10)),
@@ -159,17 +160,26 @@ class MainWindow(QMainWindow):
         self._ocr_worker: _OcrWorker | None = None
         self._unregister_i18n = register_retranslate(self.retranslate_ui)
 
-        self._reader = PdfReaderWidget(self._config, self)
-        self._reader.attach_engine(self._engine)
-        self._reader.page_changed.connect(self._on_page_changed)
-        self._reader.open_file_requested.connect(self._on_open)
-        self._reader.file_dropped.connect(self._open_path)
-        thumbs = self._reader.thumbnail_panel
-        thumbs.pages_reordered.connect(self._on_pages_reordered)
-        thumbs.page_rotate_left.connect(lambda index: self._on_rotate_page(index, -90))
-        thumbs.page_rotate_right.connect(lambda index: self._on_rotate_page(index, 90))
-        thumbs.page_delete_requested.connect(self._on_delete_page)
-        thumbs.page_insert_requested.connect(self._on_insert_pages)
+        self._documents = DocumentManager(self._engine, self._config, self)
+        self._documents.set_confirm_close_handler(self._confirm_close_tab)
+        self._documents.set_reader_factory(self._create_reader)
+        self._documents.active_changed.connect(self._on_active_tab_changed)
+        self._documents.tabs_changed.connect(self._refresh_tab_bar)
+        self._documents.dirty_changed.connect(self._on_tab_dirty_changed)
+
+        empty_reader = self._documents.empty_reader
+        empty_reader.open_file_requested.connect(self._on_open)
+        empty_reader.file_dropped.connect(self._open_path)
+
+        self._tab_bar = DocumentTabBar(self)
+        self._tab_bar.tab_selected.connect(self._documents.switch_to)
+        self._tab_bar.tab_close_requested.connect(self._on_close_tab)
+        self._tab_bar.close_others_requested.connect(self._on_close_other_tabs)
+        self._tab_bar.close_all_requested.connect(self._on_close_all_tabs)
+        self._tab_bar.file_dropped_on_tab.connect(self._on_file_dropped_on_tab)
+
+        self._thumb_panel = ThumbnailPanel(self)
+        self._wire_thumbnail_panel()
 
         self._reader_strip = ReaderToolStrip(ZOOM_PRESETS, self)
         self._wire_reader_strip()
@@ -192,6 +202,9 @@ class MainWindow(QMainWindow):
 
         if initial_path is not None:
             self._open_path(initial_path)
+        else:
+            self._restore_last_session()
+        self._refresh_tab_bar()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
         if not accept_file_drag(event):
@@ -223,21 +236,185 @@ class MainWindow(QMainWindow):
         return tr("ready_open_pdf")
 
     def _update_window_title(self) -> None:
-        prefix = (
-            "● "
-            if self._page_manager is not None and self._page_manager.is_dirty
-            else ""
-        )
-        if self._open_filename:
-            self.setWindowTitle(f"{prefix}{self._open_filename} — {tr('app_title')}")
+        state = self._active_state()
+        if state is not None:
+            prefix = "● " if state.page_manager.is_dirty else ""
+            self.setWindowTitle(f"{prefix}{state.display_name} — {tr('app_title')}")
         else:
             self.setWindowTitle(tr("app_title"))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        if not self._confirm_discard_unsaved():
+        if not self._confirm_close_all():
             event.ignore()
             return
+        save_session_paths(self._documents.paths_for_session())
         super().closeEvent(event)
+
+    def _active_state(self) -> DocumentState | None:
+        return self._documents.get_active()
+
+    def _active_reader(self) -> PdfReaderWidget | None:
+        state = self._active_state()
+        return state.reader if state is not None else None
+
+    def _active_doc(self) -> Any:
+        state = self._active_state()
+        return state.document if state is not None else None
+
+    def _active_page_manager(self) -> PageManager | None:
+        state = self._active_state()
+        return state.page_manager if state is not None else None
+
+    def _create_reader(self) -> PdfReaderWidget:
+        reader = PdfReaderWidget(self._config, self)
+        reader.attach_engine(self._engine)
+        reader.page_changed.connect(self._on_page_changed)
+        reader.open_file_requested.connect(self._on_open)
+        reader.file_dropped.connect(self._open_path)
+        reader.fit_mode_changed.connect(self._reader_strip.set_fit_mode)
+        return reader
+
+    def _wire_thumbnail_panel(self) -> None:
+        """Connect the single shared sidebar thumbnail panel once."""
+        self._thumb_panel.page_selected.connect(self._on_thumbnail_page_selected)
+        self._thumb_panel.pages_reordered.connect(self._on_pages_reordered)
+        self._thumb_panel.page_rotate_left.connect(
+            lambda index: self._on_rotate_page(index, -90)
+        )
+        self._thumb_panel.page_rotate_right.connect(
+            lambda index: self._on_rotate_page(index, 90)
+        )
+        self._thumb_panel.page_delete_requested.connect(self._on_delete_page)
+        self._thumb_panel.page_insert_requested.connect(self._on_insert_pages)
+
+    def _on_thumbnail_page_selected(self, page_index: int) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.go_to_page(page_index)
+
+    def _sync_thumbnail_panel(self) -> None:
+        """Reload the shared thumbnail sidebar for the active document."""
+        state = self._active_state()
+        if state is None or self._engine is None:
+            self._thumb_panel.clear_thumbnails()
+            return
+        reader = state.reader
+        self._thumb_panel.load_document(
+            self._engine,
+            state.document,
+            current_page=reader.current_page,
+        )
+
+    def _restore_last_session(self) -> None:
+        if not bool(self._config.get("open_last_session", False)):
+            return
+        for path in load_session_paths():
+            self._open_path(path)
+
+    def _refresh_tab_bar(self) -> None:
+        labels = [
+            self._documents.tab_label(index)
+            for index in range(self._documents.tab_count())
+        ]
+        current = self._documents.active_index
+        self._tab_bar.sync_tabs(labels)
+        if current >= 0:
+            self._tab_bar.set_current_index(current)
+        self._tab_bar.setVisible(bool(labels))
+
+    def _on_tab_dirty_changed(self, index: int, _dirty: bool) -> None:
+        self._tab_bar.update_tab_text(index, self._documents.tab_label(index))
+        self._update_window_title()
+        self._update_doc_dependent_actions()
+
+    def _on_active_tab_changed(self, index: int) -> None:
+        state = self._documents.get_active()
+        if state is None:
+            self._doc_open = False
+            self._sync_thumbnail_panel()
+        else:
+            self._doc_open = True
+            self._tab_bar.set_current_index(index)
+            self._sync_thumbnail_panel()
+        self._sync_toolbar_to_active()
+        self._update_window_title()
+        self._update_page_controls()
+        self._update_doc_dependent_actions()
+        if not self._doc_open:
+            self._show_status(self._ready_message(), flash=False)
+
+    def _sync_toolbar_to_active(self) -> None:
+        reader = self._active_reader()
+        if reader is None:
+            return
+        nav = self._reader_strip.page_navigator
+        nav.set_value(reader.current_page + 1)
+        self._set_zoom_combo(reader.zoom)
+        self._reader_strip.set_fit_mode(reader.fit_mode)
+
+    def _on_close_tab(self, index: int) -> None:
+        if self._documents.close_document(index):
+            self._refresh_tab_bar()
+
+    def _on_close_other_tabs(self, index: int) -> None:
+        if self._documents.close_others(index):
+            self._refresh_tab_bar()
+
+    def _on_close_all_tabs(self) -> None:
+        if self._documents.close_all():
+            self._refresh_tab_bar()
+
+    def _on_file_dropped_on_tab(self, index: int, path: object) -> None:
+        self._open_path(Path(path), replace_index=index)
+
+    def _confirm_close_tab(self, state: DocumentState) -> str | None:
+        if not state.page_manager.is_dirty:
+            return None
+        choice = ask_save_discard_cancel(
+            self,
+            tr("save_changes_before_closing"),
+        )
+        if choice == "cancel":
+            return "cancel"
+        if choice == "save":
+            if not self._save_document_state(state):
+                return "cancel"
+        return "discard"
+
+    def _confirm_close_all(self) -> bool:
+        while self._documents.tab_count():
+            index = self._documents.tab_count() - 1
+            state = self._documents.tab_at(index)
+            if state is not None and state.page_manager.is_dirty:
+                choice = self._confirm_close_tab(state)
+                if choice == "cancel":
+                    return False
+            if not self._documents.close_document(index, confirm=False):
+                return False
+        return True
+
+    def _save_document_state(
+        self, state: DocumentState, *, path: Path | None = None
+    ) -> bool:
+        if self._engine is None:
+            return False
+        target = path or state.file_path
+        try:
+            self._engine.save(state.document, target, garbage=4)
+        except DocumentSaveError as exc:
+            show_critical(self, tr("msg_save_failed").replace("{detail}", str(exc)))
+            return False
+        if path is not None:
+            state.file_path = path
+            state.document.path = path
+        state.page_manager.reset_dirty()
+        index = self._documents.find_index_by_path(target)
+        if index is not None:
+            self._tab_bar.update_tab_text(index, self._documents.tab_label(index))
+        self._update_window_title()
+        self._update_doc_dependent_actions()
+        self._show_status(tr("status_saved").replace("{filename}", target.name))
+        return True
 
     def retranslate_ui(self) -> None:
         """Refresh menus, toolbar, and status text for the active language."""
@@ -305,8 +482,13 @@ class MainWindow(QMainWindow):
             self._nav.retranslate_ui()
         if hasattr(self, "_reader_strip"):
             self._reader_strip.retranslate_ui()
-        if hasattr(self, "_reader"):
-            self._reader.retranslate_ui()
+        reader = self._active_reader()
+        if reader is not None:
+            reader.retranslate_ui()
+        elif hasattr(self, "_documents"):
+            self._documents.empty_reader.retranslate_ui()
+        if hasattr(self, "_thumb_panel"):
+            self._thumb_panel.retranslate_ui()
         self._update_window_title()
         if not self._doc_open:
             self._show_status(self._ready_message(), flash=False)
@@ -325,6 +507,13 @@ class MainWindow(QMainWindow):
         nav_row.addWidget(self._nav_card)
         root.addLayout(nav_row)
 
+        tab_row = QHBoxLayout()
+        tab_row.setContentsMargins(8, 0, 8, 0)
+        self._tab_card = FloatingCard("documentTabCard", padding=8)
+        self._tab_card.set_content(self._tab_bar)
+        tab_row.addWidget(self._tab_card)
+        root.addLayout(tab_row)
+
         strip_row = QHBoxLayout()
         strip_row.setContentsMargins(8, 0, 8, 0)
         self._strip_card = FloatingCard("readerStripCard", padding=16)
@@ -336,7 +525,6 @@ class MainWindow(QMainWindow):
         content_row.setSpacing(10)
 
         self._thumb_card = FloatingCard("thumbnailCard", padding=16)
-        self._thumb_panel = self._reader.thumbnail_panel
         self._thumb_panel.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Expanding,
@@ -344,7 +532,7 @@ class MainWindow(QMainWindow):
         self._thumb_card.set_content(self._thumb_panel, stretch=1)
 
         self._viewer_card = FloatingCard("viewerCard", padding=16)
-        self._viewer_card.set_content(self._reader, stretch=1)
+        self._viewer_card.set_content(self._documents.stack, stretch=1)
 
         content_row.addWidget(self._thumb_card)
         content_row.addWidget(self._viewer_card, 1)
@@ -386,12 +574,28 @@ class MainWindow(QMainWindow):
     def _wire_reader_strip(self) -> None:
         self._reader_strip.open_clicked.connect(self._on_open)
         self._reader_strip.page_changed.connect(self._on_page_indicator_changed)
-        self._reader_strip.zoom_changed.connect(self._reader.set_zoom)
-        self._reader_strip.fit_width_clicked.connect(self._reader.fit_width)
-        self._reader_strip.fit_page_clicked.connect(self._reader.fit_page)
-        self._reader.fit_mode_changed.connect(self._reader_strip.set_fit_mode)
+        self._reader_strip.zoom_changed.connect(self._on_strip_zoom_changed)
+        self._reader_strip.fit_width_clicked.connect(self._on_strip_fit_width)
+        self._reader_strip.fit_page_clicked.connect(self._on_strip_fit_page)
         default_zoom = float(self._config.get("zoom_default", 1.0))
         self._set_zoom_combo(default_zoom)
+
+    def _on_strip_zoom_changed(self, zoom: float) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.set_zoom(zoom)
+
+    def _on_strip_fit_width(self) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.fit_width()
+            self._reader_strip.set_fit_mode(reader.fit_mode)
+
+    def _on_strip_fit_page(self) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.fit_page()
+            self._reader_strip.set_fit_mode(reader.fit_mode)
 
     def _popup_menu(self, menu: QMenu, tab) -> None:  # noqa: ANN001
         self._nav.show_menu_tab(tab)
@@ -428,31 +632,31 @@ class MainWindow(QMainWindow):
         self._view_menu = QMenu("&" + tr("view"), self)
         self._action_zoom_in = self._view_menu.addAction(
             "&" + tr("zoom_in"),
-            self._reader.zoom_in,
+            self._zoom_in_active,
             QKeySequence.StandardKey.ZoomIn,
         )
         self._action_zoom_out = self._view_menu.addAction(
             "&" + tr("zoom_out"),
-            self._reader.zoom_out,
+            self._zoom_out_active,
             QKeySequence.StandardKey.ZoomOut,
         )
         self._action_fit_width = self._view_menu.addAction(
             tr("fit_width"),
-            self._reader.fit_width,
+            self._on_strip_fit_width,
         )
         self._action_fit_page = self._view_menu.addAction(
             tr("fit_page"),
-            self._reader.fit_page,
+            self._on_strip_fit_page,
         )
         self._view_menu.addSeparator()
         self._action_next_page = self._view_menu.addAction(
             "&" + tr("next_page"),
-            self._reader.next_page,
+            self._next_page_active,
             QKeySequence("PgDown"),
         )
         self._action_previous_page = self._view_menu.addAction(
             "&" + tr("previous_page"),
-            self._reader.previous_page,
+            self._previous_page_active,
             QKeySequence("PgUp"),
         )
 
@@ -543,77 +747,107 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+F"), self, self._search_bar.setFocus)
         QShortcut(QKeySequence("F3"), self, self._on_find_next)
         QShortcut(QKeySequence("Shift+F3"), self, self._on_find_previous)
+        QShortcut(QKeySequence("Ctrl+W"), self, self._close_active_tab)
+        QShortcut(QKeySequence("Ctrl+Tab"), self, self._next_tab)
+        QShortcut(QKeySequence("Ctrl+Shift+Tab"), self, self._previous_tab)
+        for number in range(1, 10):
+            QShortcut(
+                QKeySequence(f"Ctrl+{number}"),
+                self,
+                lambda index=number - 1: self._switch_to_tab_index(index),
+            )
 
-    def _confirm_discard_unsaved(self) -> bool:
-        if (
-            self._doc is None
-            or self._page_manager is None
-            or not self._page_manager.is_dirty
-        ):
-            return True
-        filename = self._open_filename or self._doc.path.name
-        choice = ask_save_discard_cancel(
-            self,
-            tr("unsaved_changes_prompt").replace("{filename}", filename),
-        )
-        if choice == "cancel":
-            return False
-        if choice == "save":
-            return self._save_document()
-        return True
+    def _zoom_in_active(self) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.zoom_in()
+
+    def _zoom_out_active(self) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.zoom_out()
+
+    def _next_page_active(self) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.next_page()
+
+    def _previous_page_active(self) -> None:
+        reader = self._active_reader()
+        if reader is not None:
+            reader.previous_page()
+
+    def _close_active_tab(self) -> None:
+        index = self._documents.active_index
+        if index >= 0:
+            self._on_close_tab(index)
+
+    def _next_tab(self) -> None:
+        count = self._documents.tab_count()
+        if count <= 1:
+            return
+        index = (self._documents.active_index + 1) % count
+        self._documents.switch_to(index)
+
+    def _previous_tab(self) -> None:
+        count = self._documents.tab_count()
+        if count <= 1:
+            return
+        index = (self._documents.active_index - 1) % count
+        self._documents.switch_to(index)
+
+    def _switch_to_tab_index(self, index: int) -> None:
+        if 0 <= index < self._documents.tab_count():
+            self._documents.switch_to(index)
 
     def _save_document(self, *, path: Path | None = None) -> bool:
-        if self._engine is None or self._doc is None:
+        state = self._active_state()
+        if state is None:
             return False
-        target = path or self._doc.path
-        try:
-            self._engine.save(self._doc, target, garbage=4)
-        except DocumentSaveError as exc:
-            show_critical(self, tr("msg_save_failed").replace("{detail}", str(exc)))
-            return False
-        if path is not None:
-            self._doc.path = path
-            self._open_filename = path.name
-        if self._page_manager is not None:
-            self._page_manager.reset_dirty()
-        self._update_window_title()
-        self._show_status(tr("status_saved").replace("{filename}", target.name))
-        return True
+        return self._save_document_state(state, path=path)
 
     def _on_save(self) -> None:
-        if self._doc is None or self._page_manager is None:
-            return
-        if not self._page_manager.is_dirty:
+        state = self._active_state()
+        if state is None or not state.page_manager.is_dirty:
             return
         self._save_document()
 
     def _on_save_as(self) -> None:
-        if self._doc is None:
+        state = self._active_state()
+        if state is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             self,
             tr("save_as"),
-            str(self._doc.path),
+            str(state.file_path),
             "PDF (*.pdf)",
         )
         if path:
             self._save_document(path=Path(path))
 
     def _after_page_structure_change(self, current_page: int | None = None) -> None:
-        self._reader.reload_document(current_page=current_page)
+        reader = self._active_reader()
+        if reader is None:
+            return
+        reader.reload_document(current_page=current_page)
+        self._sync_thumbnail_panel()
         self._update_page_controls()
+        self._documents.mark_dirty()
+        self._refresh_tab_bar()
         self._update_window_title()
         self._update_doc_dependent_actions()
 
     def _on_pages_reordered(self, from_row: int, to_row: int) -> None:
-        if self._doc is None or self._page_manager is None:
+        state = self._active_state()
+        reader = self._active_reader()
+        if state is None or reader is None:
             return
-        current = self._reader.current_page
+        current = reader.current_page
         try:
-            self._page_manager.move_page(self._doc, from_row, to_row)
+            state.page_manager.move_page(state.document, from_row, to_row)
         except PageIndexError as exc:
             show_critical(self, str(exc))
-            self._reader.thumbnail_panel.refresh(self._engine, self._doc)
+            self._sync_thumbnail_panel()
             return
         if current == from_row:
             new_current = to_row
@@ -626,20 +860,27 @@ class MainWindow(QMainWindow):
         self._after_page_structure_change(new_current)
 
     def _on_rotate_page(self, page_index: int, degrees: int) -> None:
-        if self._doc is None or self._page_manager is None:
+        state = self._active_state()
+        reader = self._active_reader()
+        if state is None or reader is None:
             return
         try:
-            self._page_manager.rotate_page(self._doc, page_index, degrees)
+            state.page_manager.rotate_page(state.document, page_index, degrees)
         except PageIndexError as exc:
             show_critical(self, str(exc))
             return
-        self._reader.refresh_page_view(page_index=page_index)
+        reader.refresh_page_view(page_index=page_index)
+        self._sync_thumbnail_panel()
+        self._documents.mark_dirty()
+        self._refresh_tab_bar()
         self._update_window_title()
 
     def _on_delete_page(self, page_index: int) -> None:
-        if self._doc is None or self._page_manager is None:
+        state = self._active_state()
+        reader = self._active_reader()
+        if state is None or reader is None:
             return
-        if self._reader.page_count <= 1:
+        if reader.page_count <= 1:
             show_warning(self, tr("page_delete_last_blocked"))
             return
         if not ask_yes_no(
@@ -647,21 +888,21 @@ class MainWindow(QMainWindow):
             tr("page_delete_confirm").replace("{page}", str(page_index + 1)),
         ):
             return
-        current = self._reader.current_page
+        current = reader.current_page
         try:
-            self._page_manager.delete_page(self._doc, page_index)
+            state.page_manager.delete_page(state.document, page_index)
         except PageIndexError as exc:
             show_critical(self, str(exc))
             return
         new_current = (
-            min(current, self._reader.page_count - 1)
-            if current >= page_index
-            else current
+            min(current, reader.page_count - 1) if current >= page_index else current
         )
         self._after_page_structure_change(new_current)
 
     def _on_insert_pages(self, at_index: int) -> None:
-        if self._doc is None or self._page_manager is None:
+        state = self._active_state()
+        reader = self._active_reader()
+        if state is None or reader is None:
             return
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -671,9 +912,11 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        current = self._reader.current_page
+        current = reader.current_page
         try:
-            self._page_manager.insert_pages_from_file(self._doc, at_index, Path(path))
+            state.page_manager.insert_pages_from_file(
+                state.document, at_index, Path(path)
+            )
         except (DocumentOpenError, PageIndexError) as exc:
             show_critical(self, str(exc))
             return
@@ -682,21 +925,28 @@ class MainWindow(QMainWindow):
         self._after_page_structure_change(current)
 
     def _on_split_pdf(self) -> None:
-        if self._doc is None or self._page_manager is None:
+        state = self._active_state()
+        if state is None:
             return
         show_split_pdf_dialog(
             self,
-            page_manager=self._page_manager,
+            page_manager=state.page_manager,
             engine=self._engine,
-            doc=self._doc,
+            doc=state.document,
         )
 
     def _on_merge_pdf(self) -> None:
-        if self._page_manager is None:
+        state = self._active_state()
+        if state is None:
+            show_merge_pdf_dialog(
+                self,
+                page_manager=PageManager(self._engine),
+                on_open_result=lambda path: self._open_path(path),
+            )
             return
         show_merge_pdf_dialog(
             self,
-            page_manager=self._page_manager,
+            page_manager=state.page_manager,
             on_open_result=lambda path: self._open_path(path),
         )
 
@@ -722,21 +972,25 @@ class MainWindow(QMainWindow):
             return tr("msg_cannot_open_file").replace("{filename}", path.name)
         return tr("msg_open_failed_generic")
 
-    def _open_path(self, path: Path, password: str | None = None) -> None:
+    def _open_path(
+        self,
+        path: Path,
+        password: str | None = None,
+        *,
+        is_temp: bool = False,
+        replace_index: int | None = None,
+    ) -> None:
         if self._engine is None:
             show_warning(self, tr("msg_engine_unavailable"))
             return
-        if not self._confirm_discard_unsaved():
+
+        existing = self._documents.find_index_by_path(path)
+        if existing is not None and replace_index is None:
+            self._documents.switch_to(existing)
             return
-        if self._doc is not None:
-            try:
-                self._engine.close(self._doc)
-            except Exception:
-                pass
-            self._doc = None
 
         try:
-            self._doc = self._engine.open(path, password=password)
+            document = self._engine.open(path, password=password)
         except Exception as exc:
             if self._is_encrypted_error(exc) and password is None:
                 pwd, ok = QInputDialog.getText(
@@ -746,7 +1000,12 @@ class MainWindow(QMainWindow):
                     QLineEdit.EchoMode.Password,
                 )
                 if ok and pwd:
-                    self._open_path(path, password=pwd)
+                    self._open_path(
+                        path,
+                        password=pwd,
+                        is_temp=is_temp,
+                        replace_index=replace_index,
+                    )
                 return
             show_critical(
                 self,
@@ -754,29 +1013,38 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._reader.show_document(self._doc)
-        self._doc_open = True
-        if self._page_manager is not None:
-            self._page_manager.reset_dirty()
-        self._open_filename = path.name
-        self._update_window_title()
+        if replace_index is not None:
+            self._documents.replace_document_at(
+                replace_index,
+                document,
+                path,
+                is_temp=is_temp,
+            )
+        else:
+            self._documents.open_document(document, path, is_temp=is_temp)
+
+        self._doc_open = self._documents.tab_count() > 0
+        self._refresh_tab_bar()
+        self._sync_toolbar_to_active()
         self._update_page_controls()
-        self._set_zoom_combo(self._reader.zoom)
+        self._update_window_title()
         title = path.name
-        if getattr(self._doc, "format", None) is not None:
-            fmt = getattr(self._doc.format, "value", str(self._doc.format))
+        if getattr(document, "format", None) is not None:
+            fmt = getattr(document.format, "value", str(document.format))
             if fmt == "p7m":
                 title += " (P7M extracted)"
         self._show_status(tr("status_opened").replace("{filename}", title))
-        self._recent.add(path)
-        self._refresh_recent_menu()
+        if not is_temp:
+            self._recent.add(path)
+            self._refresh_recent_menu()
         self._update_doc_dependent_actions()
 
     def _pdf_bytes_for_ocr(self) -> bytes | None:
         """Return in-memory PDF bytes for OCR when the open document is not a plain file."""
-        if self._doc is None:
+        state = self._active_state()
+        if state is None:
             return None
-        handle = getattr(self._doc, "_handle", None)
+        handle = getattr(state.document, "_handle", None)
         if handle is None:
             return None
         try:
@@ -785,7 +1053,8 @@ class MainWindow(QMainWindow):
             return None
 
     def _on_ocr(self) -> None:
-        if not self._doc_open or self._doc is None:
+        state = self._active_state()
+        if not self._doc_open or state is None:
             show_warning(self, tr("ocr_requires_open_document"))
             return
         if self._ocr_worker is not None and self._ocr_worker.isRunning():
@@ -799,7 +1068,7 @@ class MainWindow(QMainWindow):
 
         render_dpi = int(self._config.get("render_dpi", DEFAULT_OCR_DPI))
         self._ocr_worker = _OcrWorker(
-            pdf_path=self._doc.path,
+            pdf_path=state.file_path,
             pdf_bytes=self._pdf_bytes_for_ocr(),
             dpi=render_dpi,
         )
@@ -826,15 +1095,19 @@ class MainWindow(QMainWindow):
         self._ocr_status_progress.setValue(value)
         self._ocr_status_progress.setFormat(f"{percent}%")
         self._ocr_status_progress.show()
-        self._reader.show_ocr_progress(current, total)
+        reader = self._active_reader()
+        if reader is not None:
+            reader.show_ocr_progress(current, total)
 
     def _end_ocr_progress(self) -> None:
         self._ocr_status_progress.hide()
-        self._reader.hide_ocr_progress()
+        reader = self._active_reader()
+        if reader is not None:
+            reader.hide_ocr_progress()
 
     def _on_ocr_succeeded(self, output_path: object) -> None:
         self._end_ocr_progress()
-        self._open_path(Path(output_path))
+        self._open_path(Path(output_path), is_temp=True)
         self._show_status(tr("ocr_status_completed"), flash=True)
 
     def _on_ocr_failed(self, _message: str) -> None:
@@ -846,8 +1119,9 @@ class MainWindow(QMainWindow):
         self._update_doc_dependent_actions()
 
     def _update_doc_dependent_actions(self) -> None:
-        enabled = self._doc_open and self._doc is not None
-        dirty = self._page_manager is not None and self._page_manager.is_dirty
+        state = self._active_state()
+        enabled = self._doc_open and state is not None
+        dirty = state is not None and state.page_manager.is_dirty
         if self._action_ocr is not None:
             self._action_ocr.setEnabled(enabled)
             self._action_ocr.setToolTip(
@@ -877,16 +1151,22 @@ class MainWindow(QMainWindow):
             )
 
     def _on_page_changed(self, page_index: int) -> None:
+        if self.sender() is not self._active_reader():
+            return
         self._reader_strip.page_navigator.set_value(page_index + 1)
+        self._thumb_panel.set_current_page(page_index)
 
     def _on_page_indicator_changed(self, one_based: int) -> None:
-        self._reader.go_to_page(one_based - 1)
+        reader = self._active_reader()
+        if reader is not None:
+            reader.go_to_page(one_based - 1)
 
     def _update_page_controls(self) -> None:
-        count = self._reader.page_count
+        reader = self._active_reader()
+        count = reader.page_count if reader is not None else 0
         nav = self._reader_strip.page_navigator
         nav.set_range(max(1, count))
-        if count > 0:
+        if count > 0 and reader is not None:
             nav.set_value(min(nav.value(), count))
         nav.set_nav_enabled(count > 1)
 
@@ -898,8 +1178,11 @@ class MainWindow(QMainWindow):
         combo.blockSignals(False)
 
     def _on_search(self) -> None:
+        reader = self._active_reader()
+        if reader is None:
+            return
         query = self._search_bar.text()
-        count = self._reader.find_text(query)
+        count = reader.find_text(query)
         if not query.strip():
             self._show_status(tr("status_search_cleared"))
         elif count == 0:
@@ -913,12 +1196,14 @@ class MainWindow(QMainWindow):
         self._update_page_controls()
 
     def _on_find_next(self) -> None:
-        if self._reader.find_next():
+        reader = self._active_reader()
+        if reader is not None and reader.find_next():
             self._show_status(tr("status_next_match"))
             self._update_page_controls()
 
     def _on_find_previous(self) -> None:
-        if self._reader.find_previous():
+        reader = self._active_reader()
+        if reader is not None and reader.find_previous():
             self._show_status(tr("status_prev_match"))
             self._update_page_controls()
 

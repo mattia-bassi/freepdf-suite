@@ -36,7 +36,6 @@ from .page_geometry import (
 from .page_render_queue import PageRenderQueue
 from .page_view_label import PageViewLabel
 from .style import INTERACTION_BORDER, TEXT_SECONDARY
-from .thumbnail_panel import ThumbnailPanel
 from .visual_effects import search_rim_glow
 
 ZOOM_MIN = 0.1
@@ -90,10 +89,6 @@ class PdfReaderWidget(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-
-        self._thumbs = ThumbnailPanel()
-        self._thumbs.page_selected.connect(self.go_to_page)
-        enable_file_drops(self._thumbs)
 
         self._scroll = QScrollArea()
         self._scroll.setObjectName("pdfViewerScroll")
@@ -166,17 +161,11 @@ class PdfReaderWidget(QWidget):
 
     # -- public API ----------------------------------------------------------
 
-    @property
-    def thumbnail_panel(self) -> ThumbnailPanel:
-        """Sidebar thumbnail list (hosted in a floating card by MainWindow)."""
-        return self._thumbs
-
     def attach_engine(self, engine: Any) -> None:
         self._engine = engine
 
     def retranslate_ui(self) -> None:
         """Refresh reader child widgets for the active language."""
-        self._thumbs.retranslate_ui()
         if self._placeholder_message.isHidden():
             self._refresh_empty_state()
         elif self._placeholder_message.text():
@@ -231,9 +220,6 @@ class PdfReaderWidget(QWidget):
             self._show_placeholder("viewer_no_pages")
             return
 
-        self._thumbs.prepare(page_count)
-        self._thumbs.start_lazy_load(self._engine, doc)
-
         dpi = self._effective_dpi()
         for index in range(page_count):
             label = PageViewLabel(index, reader=self)
@@ -249,7 +235,6 @@ class PdfReaderWidget(QWidget):
             self._layout.addWidget(label)
             self._page_labels[index] = label
 
-        self._thumbs.set_current_page(0)
         self.page_changed.emit(0)
         self._schedule_visible_render()
 
@@ -263,10 +248,9 @@ class PdfReaderWidget(QWidget):
             self.go_to_page(min(max(0, page), self.page_count - 1))
 
     def refresh_page_view(self, *, page_index: int | None = None) -> None:
-        """Refresh thumbnails and rendered pages without rebuilding the full layout."""
+        """Refresh rendered pages without rebuilding the full layout."""
         if self._doc is None or self._engine is None:
             return
-        self._thumbs.refresh(self._engine, self._doc)
         self._invalidate_render_cache()
         self._schedule_visible_render(
             front=page_index if page_index is not None else self._current_page
@@ -281,7 +265,6 @@ class PdfReaderWidget(QWidget):
             self._updating_page = True
             self._scroll.ensureWidgetVisible(label, 0, 80)
             self._updating_page = False
-        self._thumbs.set_current_page(page_index)
         self.page_changed.emit(page_index)
         self._schedule_visible_render(front=page_index)
 
@@ -531,7 +514,6 @@ class PdfReaderWidget(QWidget):
     def _clear_pages(self) -> None:
         self._render_timer.stop()
         self._queue.clear()
-        self._thumbs.stop_lazy_load()
         while self._layout.count():
             item = self._layout.takeAt(0)
             widget = item.widget()
@@ -543,7 +525,6 @@ class PdfReaderWidget(QWidget):
         self._layout.addWidget(self._placeholder)
         self._refresh_empty_state()
         self._placeholder.show()
-        self._thumbs.clear_thumbnails()
 
     def _empty_hints_html(self) -> str:
         open_hint = tr("viewer_hint_open")
@@ -725,6 +706,18 @@ class PdfReaderWidget(QWidget):
         self._zoom = max(ZOOM_MIN, min(ZOOM_MAX, target))
         self._invalidate_render_cache()
 
+    def scroll_position(self) -> tuple[int, int]:
+        """Return horizontal and vertical scroll offsets."""
+        horizontal = self._scroll.horizontalScrollBar().value()
+        vertical = self._scroll.verticalScrollBar().value()
+        return (horizontal, vertical)
+
+    def set_scroll_position(self, position: tuple[int, int]) -> None:
+        """Restore horizontal and vertical scroll offsets."""
+        horizontal, vertical = position
+        self._scroll.horizontalScrollBar().setValue(horizontal)
+        self._scroll.verticalScrollBar().setValue(vertical)
+
     def _sync_page_from_scroll(self) -> None:
         if not self._page_labels:
             return
@@ -740,5 +733,4 @@ class PdfReaderWidget(QWidget):
                 best_index = index
         if best_index != self._current_page:
             self._current_page = best_index
-            self._thumbs.set_current_page(best_index)
             self.page_changed.emit(best_index)

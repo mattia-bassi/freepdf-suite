@@ -14,6 +14,7 @@ _DEFAULTS: dict[str, Any] = {
     "default_folder": "",
     "recent_files_limit": 10,
     "open_last_file_on_startup": False,
+    "open_last_session": False,
     "default_zoom": "1.0",
     "default_view_mode": "continuous_scroll",
     "show_thumbnails_on_startup": True,
@@ -41,6 +42,46 @@ def recent_files_path() -> Path:
     return CONFIG_DIR / "recent_files.json"
 
 
+def session_path() -> Path:
+    """Path to the persisted open-session JSON store."""
+    return CONFIG_DIR / "session.json"
+
+
+def load_session_paths() -> list[Path]:
+    """Return paths stored from the last application session."""
+    path = session_path()
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    raw_paths = data.get("paths", [])
+    if not isinstance(raw_paths, list):
+        return []
+    result: list[Path] = []
+    for entry in raw_paths:
+        if not entry:
+            continue
+        candidate = Path(str(entry))
+        if candidate.is_file():
+            result.append(candidate)
+    return result
+
+
+def save_session_paths(paths: list[Path]) -> None:
+    """Persist open document paths for optional session restore."""
+    payload = {"paths": [str(path) for path in paths]}
+    target = session_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _closest_render_dpi(value: int) -> int:
     return min(_ALLOWED_RENDER_DPI, key=lambda dpi: abs(dpi - value))
 
@@ -63,6 +104,7 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     merged["open_last_file_on_startup"] = bool(
         merged.get("open_last_file_on_startup", False)
     )
+    merged["open_last_session"] = bool(merged.get("open_last_session", False))
 
     default_zoom = merged.get("default_zoom")
     if default_zoom is None and "zoom_default" in merged:

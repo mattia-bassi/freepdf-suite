@@ -31,6 +31,11 @@ class FloatingCard(QFrame):
 
     def set_content(self, widget: QWidget, *, stretch: int = 0) -> None:
         """Place a single child widget inside the card."""
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            child = item.widget()
+            if child is not None:
+                child.setParent(None)
         if stretch:
             self._layout.addWidget(widget, stretch)
         else:

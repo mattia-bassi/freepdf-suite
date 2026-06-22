@@ -98,7 +98,7 @@ class ThumbnailPanel(QWidget):
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._on_context_menu)
         self._list.pages_reordered.connect(self.pages_reordered.emit)
-        layout.addWidget(self._list)
+        layout.addWidget(self._list, 1)
 
         self._block_signals = False
         self._engine: Any = None
@@ -111,6 +111,24 @@ class ThumbnailPanel(QWidget):
     def retranslate_ui(self) -> None:
         """Refresh panel labels for the active language."""
         self._title.setText(tr("pages"))
+
+    def load_document(
+        self,
+        engine: Any,
+        doc: Any,
+        *,
+        dpi: int = 48,
+        current_page: int = 0,
+    ) -> None:
+        """Clear and reload thumbnails for a different open document."""
+        self.stop_lazy_load()
+        page_count = int(getattr(doc, "page_count", 0))
+        if page_count <= 0:
+            self.clear_thumbnails()
+            return
+        self.prepare(page_count)
+        self.start_lazy_load(engine, doc, dpi=dpi)
+        self.set_current_page(min(max(0, current_page), page_count - 1))
 
     def clear_thumbnails(self) -> None:
         self.stop_lazy_load()

@@ -221,14 +221,18 @@ class OptionsDialog(QDialog):
         self._recent_limit = _make_spinbox(tab)
         self._recent_limit.setRange(5, 50)
 
-        self._open_last_file = QCheckBox("Open last file on startup", tab)
+        self._open_last_file = QCheckBox(tr("open_last_file_on_startup"), tab)
         self._open_last_file.setObjectName("settingsCheckBox")
+
+        self._open_last_session = QCheckBox(tr("restore_last_session"), tab)
+        self._open_last_session.setObjectName("settingsCheckBox")
 
         form.addRow(_form_label("Application Language", tab), self._language_combo)
         form.addRow(_form_label("Theme", tab), self._theme_combo)
         form.addRow(_form_label("Default folder", tab), folder_row)
         form.addRow(_form_label("Recent files limit", tab), self._recent_limit)
         form.addRow("", self._open_last_file)
+        form.addRow("", self._open_last_session)
         return tab
 
     def _build_view_tab(self) -> QWidget:
@@ -337,6 +341,7 @@ class OptionsDialog(QDialog):
         self._open_last_file.setChecked(
             bool(config.get("open_last_file_on_startup", False))
         )
+        self._open_last_session.setChecked(bool(config.get("open_last_session", False)))
 
         _set_combo_value(
             self._default_zoom_combo, str(config.get("default_zoom", "1.0"))
@@ -371,6 +376,7 @@ class OptionsDialog(QDialog):
             "default_folder": self._default_folder.text().strip(),
             "recent_files_limit": self._recent_limit.value(),
             "open_last_file_on_startup": self._open_last_file.isChecked(),
+            "open_last_session": self._open_last_session.isChecked(),
             "default_zoom": default_zoom,
             "default_view_mode": str(_combo_value(self._view_mode_combo)),
             "show_thumbnails_on_startup": self._show_thumbnails.isChecked(),

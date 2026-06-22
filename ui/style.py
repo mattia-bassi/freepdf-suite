@@ -44,10 +44,41 @@ QWidget#appCanvas {{
     background: {BG_VOID};
 }}
 QFrame#navCard,
-QFrame#readerStripCard {{
+QFrame#readerStripCard,
+QFrame#documentTabCard {{
     background: {CARD_NAV_BG};
     border: none;
     border-radius: {CARD_RADIUS};
+}}
+QTabBar#documentTabBar {{
+    background: transparent;
+    border: none;
+}}
+QTabBar#documentTabBar::tab {{
+    background: {NAV_SEGMENT_BG};
+    color: {NAV_TAB_INACTIVE};
+    padding: 6px 12px 6px 10px;
+    margin-right: 4px;
+    border-radius: 8px;
+    min-height: 28px;
+}}
+QTabBar#documentTabBar::tab:selected {{
+    background: {NAV_TAB_ACTIVE_BG};
+    color: {TEXT_PRIMARY};
+    border-bottom: 2px solid {INTERACTION_BORDER};
+}}
+QTabBar#documentTabBar::tab:hover {{
+    background: {NAV_TAB_HOVER_BG};
+    color: {NAV_TAB_HOVER_TEXT};
+}}
+QToolButton#documentTabCloseButton {{
+    color: {TEXT_SECONDARY};
+    border: none;
+    padding: 0 4px;
+    font-size: 11px;
+}}
+QToolButton#documentTabCloseButton:hover {{
+    color: {TEXT_PRIMARY};
 }}
 QFrame#thumbnailCard {{
     background: {BG_CONTENT};
