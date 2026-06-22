@@ -60,3 +60,21 @@ def ask_yes_no(parent: QWidget | None, text: str) -> bool:
     )
     box.setDefaultButton(QMessageBox.StandardButton.No)
     return box.exec() == QMessageBox.StandardButton.Yes
+
+
+def ask_save_discard_cancel(parent: QWidget | None, text: str) -> str:
+    """Ask whether to save, discard, or cancel. Returns ``save``, ``discard``, or ``cancel``."""
+    box = _prepare(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setText(text)
+    save_button = box.addButton(tr("save"), QMessageBox.ButtonRole.AcceptRole)
+    discard_button = box.addButton(tr("discard_changes"), QMessageBox.ButtonRole.DestructiveRole)
+    cancel_button = box.addButton(tr("cancel"), QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(cancel_button)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is save_button:
+        return "save"
+    if clicked is discard_button:
+        return "discard"
+    return "cancel"

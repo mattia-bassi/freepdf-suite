@@ -240,6 +240,23 @@ class PdfReaderWidget(QWidget):
         self.page_changed.emit(0)
         self._schedule_visible_render()
 
+    def reload_document(self, *, current_page: int | None = None) -> None:
+        """Refresh viewer and thumbnails after in-place page structure changes."""
+        if self._doc is None:
+            return
+        page = self._current_page if current_page is None else current_page
+        self.show_document(self._doc)
+        if self.page_count > 0:
+            self.go_to_page(min(max(0, page), self.page_count - 1))
+
+    def refresh_page_view(self, *, page_index: int | None = None) -> None:
+        """Refresh thumbnails and rendered pages without rebuilding the full layout."""
+        if self._doc is None or self._engine is None:
+            return
+        self._thumbs.refresh(self._engine, self._doc)
+        self._invalidate_render_cache()
+        self._schedule_visible_render(front=page_index if page_index is not None else self._current_page)
+
     def go_to_page(self, page_index: int) -> None:
         if page_index < 0 or page_index >= self.page_count:
             return

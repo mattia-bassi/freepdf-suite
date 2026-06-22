@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDragMoveEvent, QDropEvent, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDragMoveEvent, QDropEvent, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -25,7 +25,8 @@ from .config_loader import load_app_config, recent_files_path
 from .file_drop import accept_file_drag, enable_file_drops, path_from_drop
 from .floating_card import FloatingCard
 from .i18n import register_retranslate, tr
-from .message_boxes import show_critical, show_warning
+from .message_boxes import ask_save_discard_cancel, ask_yes_no, show_critical, show_information, show_warning
+from .page_manager_dialogs import show_merge_pdf_dialog, show_split_pdf_dialog
 from .pdf_reader import PdfReaderWidget
 from .recent_files import RecentFilesStore
 from .status_bar import show_status_message
@@ -46,6 +47,8 @@ from core.ocr_engine import (
     create_temp_ocr_output_path,
     run_ocr_on_pdf,
 )
+from core.errors import DocumentOpenError, DocumentSaveError, PageIndexError
+from core.page_manager import PageManager
 
 ZOOM_PRESETS: list[tuple[str, float]] = [
     ("10%", 0.1),
@@ -94,6 +97,7 @@ class MainWindow(QMainWindow):
     def __init__(self, *, initial_path: Path | None = None) -> None:
         super().__init__()
         self._open_filename: str | None = None
+        self._page_manager: PageManager | None = None
         self._update_window_title()
         self.resize(1200, 850)
         if LOGO_PATH.is_file():
@@ -103,6 +107,7 @@ class MainWindow(QMainWindow):
         self._config = load_app_config()
         self._backend = load_backend()
         self._engine = self._make_engine()
+        self._page_manager = PageManager(self._engine) if self._engine is not None else None
         self._doc: Any = None
         self._recent = RecentFilesStore(
             recent_files_path(),
@@ -110,10 +115,14 @@ class MainWindow(QMainWindow):
         )
         self._recent_menu: QMenu | None = None
         self._action_open: QAction | None = None
+        self._action_save: QAction | None = None
+        self._action_save_as: QAction | None = None
         self._action_exit: QAction | None = None
         self._action_zoom_in: QAction | None = None
         self._action_zoom_out: QAction | None = None
         self._action_ocr: QAction | None = None
+        self._action_split_pdf: QAction | None = None
+        self._action_merge_pdf: QAction | None = None
         self._action_general_settings: QAction | None = None
         self._action_view_settings: QAction | None = None
         self._action_advanced_options: QAction | None = None
@@ -139,6 +148,12 @@ class MainWindow(QMainWindow):
         self._reader.page_changed.connect(self._on_page_changed)
         self._reader.open_file_requested.connect(self._on_open)
         self._reader.file_dropped.connect(self._open_path)
+        thumbs = self._reader.thumbnail_panel
+        thumbs.pages_reordered.connect(self._on_pages_reordered)
+        thumbs.page_rotate_left.connect(lambda index: self._on_rotate_page(index, -90))
+        thumbs.page_rotate_right.connect(lambda index: self._on_rotate_page(index, 90))
+        thumbs.page_delete_requested.connect(self._on_delete_page)
+        thumbs.page_insert_requested.connect(self._on_insert_pages)
 
         self._reader_strip = ReaderToolStrip(ZOOM_PRESETS, self)
         self._wire_reader_strip()
@@ -192,10 +207,17 @@ class MainWindow(QMainWindow):
         return tr("ready_open_pdf")
 
     def _update_window_title(self) -> None:
+        prefix = "● " if self._page_manager is not None and self._page_manager.is_dirty else ""
         if self._open_filename:
-            self.setWindowTitle(f"{self._open_filename} — {tr('app_title')}")
+            self.setWindowTitle(f"{prefix}{self._open_filename} — {tr('app_title')}")
         else:
             self.setWindowTitle(tr("app_title"))
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if not self._confirm_discard_unsaved():
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def retranslate_ui(self) -> None:
         """Refresh menus, toolbar, and status text for the active language."""
@@ -213,6 +235,10 @@ class MainWindow(QMainWindow):
             self._help_menu.setTitle("&" + tr("help"))
         if self._action_open is not None:
             self._action_open.setText("&" + tr("open_ellipsis"))
+        if self._action_save is not None:
+            self._action_save.setText("&" + tr("save"))
+        if self._action_save_as is not None:
+            self._action_save_as.setText(tr("save_as"))
         if self._recent_menu is not None:
             self._recent_menu.setTitle("&" + tr("recent_files"))
         if self._action_exit is not None:
@@ -233,6 +259,10 @@ class MainWindow(QMainWindow):
             self._action_ocr.setText(tr("ocr_title"))
             if not self._action_ocr.isEnabled():
                 self._action_ocr.setToolTip(tr("ocr_requires_open_document"))
+        if self._action_split_pdf is not None:
+            self._action_split_pdf.setText(tr("split_pdf_title"))
+        if self._action_merge_pdf is not None:
+            self._action_merge_pdf.setText(tr("merge_pdf_title"))
         if self._action_general_settings is not None:
             self._action_general_settings.setText(tr("general_settings"))
         if self._action_view_settings is not None:
@@ -356,6 +386,16 @@ class MainWindow(QMainWindow):
         )
         self._recent_menu = self._file_menu.addMenu("&" + tr("recent_files"))
         self._refresh_recent_menu()
+        self._action_save = self._file_menu.addAction(
+            "&" + tr("save"),
+            self._on_save,
+            QKeySequence.StandardKey.Save,
+        )
+        self._action_save_as = self._file_menu.addAction(
+            tr("save_as"),
+            self._on_save_as,
+            QKeySequence("Ctrl+Shift+S"),
+        )
         self._file_menu.addSeparator()
         self._action_exit = self._file_menu.addAction(
             "&" + tr("exit"),
@@ -400,6 +440,14 @@ class MainWindow(QMainWindow):
         self._action_ocr.setToolTip(tr("ocr_requires_open_document"))
         self._action_ocr.triggered.connect(self._on_ocr)
         self._tools_menu.addAction(self._action_ocr)
+        self._tools_menu.addSeparator()
+        self._action_split_pdf = QAction(tr("split_pdf_title"), self)
+        self._action_split_pdf.setEnabled(False)
+        self._action_split_pdf.triggered.connect(self._on_split_pdf)
+        self._tools_menu.addAction(self._action_split_pdf)
+        self._action_merge_pdf = QAction(tr("merge_pdf_title"), self)
+        self._action_merge_pdf.triggered.connect(self._on_merge_pdf)
+        self._tools_menu.addAction(self._action_merge_pdf)
 
         self._pdf_menu = QMenu("&" + tr("pdf"), self)
         self._action_encrypted_pdf = self._pdf_menu.addAction(
@@ -472,6 +520,154 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F3"), self, self._on_find_next)
         QShortcut(QKeySequence("Shift+F3"), self, self._on_find_previous)
 
+    def _confirm_discard_unsaved(self) -> bool:
+        if self._doc is None or self._page_manager is None or not self._page_manager.is_dirty:
+            return True
+        filename = self._open_filename or self._doc.path.name
+        choice = ask_save_discard_cancel(
+            self,
+            tr("unsaved_changes_prompt").replace("{filename}", filename),
+        )
+        if choice == "cancel":
+            return False
+        if choice == "save":
+            return self._save_document()
+        return True
+
+    def _save_document(self, *, path: Path | None = None) -> bool:
+        if self._engine is None or self._doc is None:
+            return False
+        target = path or self._doc.path
+        try:
+            self._engine.save(self._doc, target, garbage=4)
+        except DocumentSaveError as exc:
+            show_critical(self, tr("msg_save_failed").replace("{detail}", str(exc)))
+            return False
+        if path is not None:
+            self._doc.path = path
+            self._open_filename = path.name
+        if self._page_manager is not None:
+            self._page_manager.reset_dirty()
+        self._update_window_title()
+        self._show_status(tr("status_saved").replace("{filename}", target.name))
+        return True
+
+    def _on_save(self) -> None:
+        if self._doc is None or self._page_manager is None:
+            return
+        if not self._page_manager.is_dirty:
+            return
+        self._save_document()
+
+    def _on_save_as(self) -> None:
+        if self._doc is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("save_as"),
+            str(self._doc.path),
+            "PDF (*.pdf)",
+        )
+        if path:
+            self._save_document(path=Path(path))
+
+    def _after_page_structure_change(self, current_page: int | None = None) -> None:
+        self._reader.reload_document(current_page=current_page)
+        self._update_page_controls()
+        self._update_window_title()
+        self._update_doc_dependent_actions()
+
+    def _on_pages_reordered(self, from_row: int, to_row: int) -> None:
+        if self._doc is None or self._page_manager is None:
+            return
+        current = self._reader.current_page
+        try:
+            self._page_manager.move_page(self._doc, from_row, to_row)
+        except PageIndexError as exc:
+            show_critical(self, str(exc))
+            self._reader.thumbnail_panel.refresh(self._engine, self._doc)
+            return
+        if current == from_row:
+            new_current = to_row
+        elif from_row < current <= to_row:
+            new_current = current - 1
+        elif to_row <= current < from_row:
+            new_current = current + 1
+        else:
+            new_current = current
+        self._after_page_structure_change(new_current)
+
+    def _on_rotate_page(self, page_index: int, degrees: int) -> None:
+        if self._doc is None or self._page_manager is None:
+            return
+        try:
+            self._page_manager.rotate_page(self._doc, page_index, degrees)
+        except PageIndexError as exc:
+            show_critical(self, str(exc))
+            return
+        self._reader.refresh_page_view(page_index=page_index)
+        self._update_window_title()
+
+    def _on_delete_page(self, page_index: int) -> None:
+        if self._doc is None or self._page_manager is None:
+            return
+        if self._reader.page_count <= 1:
+            show_warning(self, tr("page_delete_last_blocked"))
+            return
+        if not ask_yes_no(
+            self,
+            tr("page_delete_confirm").replace("{page}", str(page_index + 1)),
+        ):
+            return
+        current = self._reader.current_page
+        try:
+            self._page_manager.delete_page(self._doc, page_index)
+        except PageIndexError as exc:
+            show_critical(self, str(exc))
+            return
+        new_current = min(current, self._reader.page_count - 1) if current >= page_index else current
+        self._after_page_structure_change(new_current)
+
+    def _on_insert_pages(self, at_index: int) -> None:
+        if self._doc is None or self._page_manager is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("page_insert_here"),
+            "",
+            "PDF (*.pdf);;All files (*)",
+        )
+        if not path:
+            return
+        current = self._reader.current_page
+        try:
+            self._page_manager.insert_pages_from_file(self._doc, at_index, Path(path))
+        except (DocumentOpenError, PageIndexError) as exc:
+            show_critical(self, str(exc))
+            return
+        if current >= at_index:
+            current += 1
+        self._after_page_structure_change(current)
+
+    def _on_split_pdf(self) -> None:
+        if self._doc is None or self._page_manager is None:
+            return
+        show_split_pdf_dialog(
+            self,
+            page_manager=self._page_manager,
+            engine=self._engine,
+            doc=self._doc,
+        )
+
+    def _on_merge_pdf(self) -> None:
+        if self._page_manager is None:
+            return
+        show_merge_pdf_dialog(
+            self,
+            page_manager=self._page_manager,
+            on_open_result=lambda path: self._open_path(path),
+        )
+
     def _on_open(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -495,6 +691,8 @@ class MainWindow(QMainWindow):
     def _open_path(self, path: Path, password: str | None = None) -> None:
         if self._engine is None:
             show_warning(self, tr("msg_engine_unavailable"))
+            return
+        if not self._confirm_discard_unsaved():
             return
         if self._doc is not None:
             try:
@@ -521,6 +719,8 @@ class MainWindow(QMainWindow):
 
         self._reader.show_document(self._doc)
         self._doc_open = True
+        if self._page_manager is not None:
+            self._page_manager.reset_dirty()
         self._open_filename = path.name
         self._update_window_title()
         self._update_page_controls()
@@ -609,11 +809,17 @@ class MainWindow(QMainWindow):
         self._update_doc_dependent_actions()
 
     def _update_doc_dependent_actions(self) -> None:
-        if self._action_ocr is None:
-            return
         enabled = self._doc_open and self._doc is not None
-        self._action_ocr.setEnabled(enabled)
-        self._action_ocr.setToolTip("" if enabled else tr("ocr_requires_open_document"))
+        dirty = self._page_manager is not None and self._page_manager.is_dirty
+        if self._action_ocr is not None:
+            self._action_ocr.setEnabled(enabled)
+            self._action_ocr.setToolTip("" if enabled else tr("ocr_requires_open_document"))
+        if self._action_split_pdf is not None:
+            self._action_split_pdf.setEnabled(enabled)
+        if self._action_save is not None:
+            self._action_save.setEnabled(enabled and dirty)
+        if self._action_save_as is not None:
+            self._action_save_as.setEnabled(enabled)
 
     def _refresh_recent_menu(self) -> None:
         if self._recent_menu is None:
