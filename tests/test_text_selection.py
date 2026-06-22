@@ -131,6 +131,31 @@ def test_two_column_anchor_focus_filters_interleaved_ocr_blocks() -> None:
     assert len(cross_rects) == 5
 
 
+def test_two_column_anchor_focus_uses_geometric_midpoint_column() -> None:
+    """When OCR word indices cross columns, filter by drag midpoint not word columns."""
+    words = [
+        ((72.0, 100.0, 120.0, 112.0), "LeftA", 0, 0, 0),
+        ((350.0, 50.0, 420.0, 62.0), "RightHeader", 1, 0, 0),
+        ((72.0, 120.0, 120.0, 132.0), "LeftB", 2, 0, 0),
+        ((350.0, 80.0, 420.0, 92.0), "RightSub", 3, 0, 0),
+        ((72.0, 140.0, 120.0, 152.0), "LeftC", 4, 0, 0),
+        ((350.0, 100.0, 420.0, 112.0), "RightBody", 5, 0, 0),
+    ]
+
+    # Anchor/focus in left column; reading-order span crosses into right column.
+    rects, text = selected_words_anchor_focus(
+        words,
+        (90.0, 106.0),
+        (95.0, 145.0),
+        page_width=595.0,
+    )
+    assert text == "LeftA\nLeftB\nLeftC"
+    assert len(rects) == 3
+    assert all(rect[2] < 300.0 for rect in rects)
+    assert "RightHeader" not in text
+    assert "RightBody" not in text
+
+
 def test_detect_column_layout_single_column_returns_none() -> None:
     from core.text_selection import detect_column_layout
 

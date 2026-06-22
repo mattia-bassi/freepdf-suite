@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from core.text_selection import WordEntry
+
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QDragEnterEvent,
@@ -204,6 +206,7 @@ class PdfReaderWidget(QWidget):
         self._search_hits = []
         self._active_hit = -1
         self.clear_selection()
+        self.invalidate_all_word_caches()
         self._current_page = 0
         self._fit_mode = None
         self.fit_mode_changed.emit(None)
@@ -327,15 +330,18 @@ class PdfReaderWidget(QWidget):
         self._go_to_hit(self._active_hit)
         return True
 
-    def words_for_page(
-        self, page_index: int
-    ) -> list[tuple[tuple[float, float, float, float], str]]:
+    def words_for_page(self, page_index: int) -> list[WordEntry]:
         if self._engine is None or self._doc is None:
             return []
         try:
             return self._engine.get_text_words(self._doc, page_index)
         except Exception:
             return []
+
+    def invalidate_all_word_caches(self) -> None:
+        """Drop cached word lists so the next selection uses the open document."""
+        for label in self._page_labels.values():
+            label.invalidate_word_cache()
 
     def widget_point_to_pdf(
         self, page_index: int, x: float, y: float
@@ -401,7 +407,7 @@ class PdfReaderWidget(QWidget):
             pix_w = metrics.pixmap_width_px
             pix_h = metrics.pixmap_height_px
 
-        origin_x, origin_y = self._pixmap_origin(label, pixmap)
+        origin_x, origin_y = self._pixmap_origin(label, pixmap, pix_w, pix_h)
         return metrics, origin_x, origin_y, pix_w, pix_h
 
     def _fallback_page_metrics(self, page_index: int) -> PageDisplayMetrics:
@@ -419,18 +425,21 @@ class PdfReaderWidget(QWidget):
         )
 
     def _pixmap_origin(
-        self, label: PageViewLabel, pixmap: QPixmap | None
+        self,
+        label: PageViewLabel,
+        pixmap: QPixmap | None,
+        pixmap_width: int,
+        pixmap_height: int,
     ) -> tuple[float, float]:
-        if pixmap is None or pixmap.isNull():
+        if pixmap_width <= 0 or pixmap_height <= 0:
             return 0.0, 0.0
         contents = label.contentsRect()
         origin_x = (
-            float(contents.x())
-            + (float(contents.width()) - float(pixmap.width())) / 2.0
+            float(contents.x()) + (float(contents.width()) - float(pixmap_width)) / 2.0
         )
         origin_y = (
             float(contents.y())
-            + (float(contents.height()) - float(pixmap.height())) / 2.0
+            + (float(contents.height()) - float(pixmap_height)) / 2.0
         )
         return origin_x, origin_y
 
@@ -454,7 +463,31 @@ class PdfReaderWidget(QWidget):
         label = self._page_labels.get(page_index)
         if label is None:
             return 0.0, 0.0
-        return self._pixmap_origin(label, self._page_pixmaps.get(page_index))
+        pixmap = label.pixmap()
+        if pixmap is None or pixmap.isNull():
+            pixmap = self._page_pixmaps.get(page_index)
+        metrics = self._page_display_metrics.get(page_index)
+        if metrics is None:
+            metrics = self._fallback_page_metrics(page_index)
+        pix_w = (
+            pixmap.width()
+            if pixmap is not None and not pixmap.isNull()
+            else metrics.pixmap_width_px
+        )
+        pix_h = (
+            pixmap.height()
+            if pixmap is not None and not pixmap.isNull()
+            else metrics.pixmap_height_px
+        )
+        return self._pixmap_origin(label, pixmap, pix_w, pix_h)
+
+    def showEvent(self, event) -> None:  # noqa: ANN001, N802
+        """Re-apply fit mode and refresh renders when a stacked reader becomes visible."""
+        super().showEvent(event)
+        if self._fit_mode is not None:
+            self._apply_fit()
+        if self._page_labels:
+            self._schedule_visible_render(front=self._current_page)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -633,6 +666,7 @@ class PdfReaderWidget(QWidget):
             label.setPixmap(pixmap)
             label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             label.setFixedSize(pixmap.size())
+            label.invalidate_word_cache()
             label.update()
         except Exception as exc:
             label.setText(f"[page {page_index + 1} failed: {exc}]")
@@ -715,8 +749,12 @@ class PdfReaderWidget(QWidget):
     def set_scroll_position(self, position: tuple[int, int]) -> None:
         """Restore horizontal and vertical scroll offsets."""
         horizontal, vertical = position
-        self._scroll.horizontalScrollBar().setValue(horizontal)
-        self._scroll.verticalScrollBar().setValue(vertical)
+        self._updating_page = True
+        try:
+            self._scroll.horizontalScrollBar().setValue(horizontal)
+            self._scroll.verticalScrollBar().setValue(vertical)
+        finally:
+            self._updating_page = False
 
     def _sync_page_from_scroll(self) -> None:
         if not self._page_labels:

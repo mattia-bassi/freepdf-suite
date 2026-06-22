@@ -174,10 +174,31 @@ def _join_selected_words(selected: list[WordEntry]) -> tuple[list[Rect], str]:
     return rects_out, "\n".join(" ".join(parts) for parts in lines)
 
 
+def _is_cross_column_drag(
+    layout: ColumnLayout,
+    anchor: Point,
+    focus: Point,
+) -> bool:
+    """Return True when the drag intentionally spans both columns."""
+    left = min(anchor[0], focus[0])
+    right = max(anchor[0], focus[0])
+    if left < layout.divider_x < right:
+        span = right - left
+        if span >= layout.page_width * 0.12:
+            return True
+    return False
+
+
+def _column_for_point(layout: ColumnLayout, x: float) -> str:
+    return "left" if x < layout.divider_x else "right"
+
+
 def selected_words_anchor_focus(
     words: list[WordEntry],
     anchor: Point,
     focus: Point,
+    *,
+    page_width: float | None = None,
 ) -> tuple[list[Rect], str]:
     """Select words from anchor to focus in PDF reading order."""
     anchor_index = word_at_point(words, anchor[0], anchor[1])
@@ -199,17 +220,18 @@ def selected_words_anchor_focus(
     end = max(position[anchor_index], position[focus_index])
     selected = [words[ordered[pos]] for pos in range(start, end + 1)]
 
-    layout = detect_column_layout(words)
-    anchor_column = _word_column(words[anchor_index], layout)
-    focus_column = _word_column(words[focus_index], layout)
-    if (
-        layout is not None
-        and anchor_column is not None
-        and anchor_column == focus_column
-    ):
-        selected = [
-            word for word in selected if _word_column(word, layout) == anchor_column
-        ]
+    layout = detect_column_layout(words, page_width=page_width)
+    if layout is not None:
+        if _is_cross_column_drag(layout, anchor, focus):
+            pass  # intentional cross-column drag
+        else:
+            mid_x = (anchor[0] + focus[0]) / 2.0
+            target_column = _column_for_point(layout, mid_x)
+            selected = [
+                word
+                for word in selected
+                if _word_column(word, layout) == target_column
+            ]
 
     return _join_selected_words(selected)
 

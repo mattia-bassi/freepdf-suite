@@ -1107,7 +1107,25 @@ class MainWindow(QMainWindow):
 
     def _on_ocr_succeeded(self, output_path: object) -> None:
         self._end_ocr_progress()
-        self._open_path(Path(output_path), is_temp=True)
+        path = Path(output_path)
+        if self._engine is None:
+            return
+        try:
+            document = self._engine.open(path)
+        except Exception as exc:
+            show_critical(
+                self,
+                self._friendly_open_error(exc, path, had_password=False),
+            )
+            return
+        self._documents.replace_current(document, path, is_temp=True)
+        self._doc_open = self._documents.tab_count() > 0
+        self._refresh_tab_bar()
+        self._sync_thumbnail_panel()
+        self._sync_toolbar_to_active()
+        self._update_page_controls()
+        self._update_window_title()
+        self._update_doc_dependent_actions()
         self._show_status(tr("ocr_status_completed"), flash=True)
 
     def _on_ocr_failed(self, _message: str) -> None:

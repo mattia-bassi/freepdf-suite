@@ -186,6 +186,35 @@ class DocumentManager(QObject):
         self.tabs_changed.emit()
         return index
 
+    def replace_current(
+        self,
+        document: Any,
+        path: Path,
+        *,
+        is_temp: bool = False,
+    ) -> int:
+        """Replace the active tab's document in place without opening a new tab."""
+        if self._active_index < 0 or self._active_index >= len(self._tabs):
+            return self.open_document(document, path, is_temp=is_temp)
+
+        state = self._tabs[self._active_index]
+        self._engine.close(state.document)
+
+        state.file_path = path
+        state.document = document
+        state.is_temp = is_temp
+        state.page_manager.reset_dirty()
+        state.current_page = 0
+        state.zoom_level = float(self._config.get("zoom_default", 1.0))
+        state.fit_mode = None
+        state.scroll_position = (0, 0)
+
+        state.reader.clear_selection()
+        state.reader.show_document(document)
+        self.tabs_changed.emit()
+        self.active_changed.emit(self._active_index)
+        return self._active_index
+
     def switch_to(self, index: int) -> None:
         """Activate a tab and show its reader widget."""
         if index < 0 or index >= len(self._tabs):
@@ -193,11 +222,15 @@ class DocumentManager(QObject):
         if self._active_index >= 0:
             active = self.get_active()
             if active is not None:
+                active.reader.clear_selection()
+                active.reader.invalidate_all_word_caches()
                 active.capture_viewer_state()
 
         self._active_index = index
         state = self._tabs[index]
         self._stack.setCurrentWidget(state.reader)
+        state.reader.clear_selection()
+        state.reader.invalidate_all_word_caches()
         state.restore_viewer_state()
         self.active_changed.emit(index)
 

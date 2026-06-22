@@ -16,7 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QMenu
 
-from core.text_selection import Rect, selected_words_anchor_focus
+from core.text_selection import Rect, WordEntry, selected_words_anchor_focus
 
 from .i18n import tr
 
@@ -47,7 +47,7 @@ class PageViewLabel(QLabel):
         self._press_pos: QPointF | None = None
         self._drag_pos: QPointF | None = None
         self._dragging = False
-        self._word_cache: list[tuple[Rect, str]] | None = None
+        self._word_cache: list[WordEntry] | None = None
         self._highlight_rects: list[Rect] = []
         self._highlight_text = ""
         self._drag_rects: list[Rect] = []
@@ -116,11 +116,9 @@ class PageViewLabel(QLabel):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._press_pos is not None:
             if self._dragging and self._drag_pos is not None:
-                anchor, focus = self._selection_points_pdf(
+                rects, text = self._anchor_focus_selection(
                     self._press_pos, self._drag_pos
                 )
-                words = self._words()
-                rects, text = selected_words_anchor_focus(words, anchor, focus)
                 self._highlight_rects = rects
                 self._highlight_text = text
                 self._drag_rects = []
@@ -163,7 +161,7 @@ class PageViewLabel(QLabel):
             painter.drawRect(QRectF(x0, y0, x1 - x0, y1 - y0))
         painter.end()
 
-    def _words(self) -> list[tuple[Rect, str]]:
+    def _words(self) -> list[WordEntry]:
         if self._word_cache is None:
             self._word_cache = self._reader.words_for_page(self._page_index)
         return self._word_cache
@@ -171,14 +169,33 @@ class PageViewLabel(QLabel):
     def invalidate_word_cache(self) -> None:
         self._word_cache = None
 
+    def _page_width_pt(self) -> float | None:
+        if self._reader._engine is None or self._reader._doc is None:
+            return None
+        try:
+            info = self._reader._engine.page_info(
+                self._reader._doc, self._page_index
+            )
+            return float(info.width)
+        except Exception:
+            return None
+
+    def _anchor_focus_selection(
+        self, start: QPointF, end: QPointF
+    ) -> tuple[list[Rect], str]:
+        anchor, focus = self._selection_points_pdf(start, end)
+        return selected_words_anchor_focus(
+            self._words(),
+            anchor,
+            focus,
+            page_width=self._page_width_pt(),
+        )
+
     def _update_drag_preview(self) -> None:
         if self._press_pos is None or self._drag_pos is None:
             self._drag_rects = []
             return
-        selection = self._selection_points_pdf(self._press_pos, self._drag_pos)
-        rects, _text = selected_words_anchor_focus(
-            self._words(), selection[0], selection[1]
-        )
+        rects, _text = self._anchor_focus_selection(self._press_pos, self._drag_pos)
         self._drag_rects = rects
 
     def _selection_points_pdf(

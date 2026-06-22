@@ -123,6 +123,33 @@ def test_switch_to_restores_page_and_zoom(tmp_path: Path, qapp: QApplication) ->
     engine.close(doc_second)
 
 
+def test_replace_current_updates_active_tab_in_place(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    original = tmp_path / "source.pdf"
+    replacement = tmp_path / "CV_ocr_abcd12.pdf"
+    _make_pdf(original)
+    _make_pdf(replacement, pages=2)
+    manager, engine = _open_manager(tmp_path)
+    manager.set_confirm_close_handler(lambda _state: "discard")
+
+    doc = engine.open(original)
+    manager.open_document(doc, original)
+    assert manager.tab_count() == 1
+
+    replacement_doc = engine.open(replacement)
+    index = manager.replace_current(replacement_doc, replacement, is_temp=True)
+
+    assert index == 0
+    assert manager.tab_count() == 1
+    active = manager.get_active()
+    assert active is not None
+    assert active.file_path == replacement
+    assert active.is_temp is True
+    assert manager.tab_label(0).endswith("CV_ocr_abcd12.pdf")
+    engine.close(replacement_doc)
+
+
 def test_dirty_state_propagates_to_tab_label(
     tmp_path: Path, qapp: QApplication
 ) -> None:
