@@ -55,7 +55,9 @@ def _word_center_x(word: WordEntry) -> float:
     return (rect[0] + rect[2]) / 2.0
 
 
-def detect_column_layout(words: list[WordEntry], *, page_width: float | None = None) -> ColumnLayout | None:
+def detect_column_layout(
+    words: list[WordEntry], *, page_width: float | None = None
+) -> ColumnLayout | None:
     """Detect a two-column layout from word X positions, or return None for single-column."""
     centers: list[float] = []
     max_x = 0.0
@@ -186,8 +188,12 @@ def selected_words_anchor_focus(
         anchor_index = focus_index
     if focus_index is None:
         focus_index = anchor_index
+    assert anchor_index is not None
+    assert focus_index is not None
 
-    ordered = sorted(range(len(words)), key=lambda index: _reading_order_key(words[index]))
+    ordered = sorted(
+        range(len(words)), key=lambda index: _reading_order_key(words[index])
+    )
     position = {index: pos for pos, index in enumerate(ordered)}
     start = min(position[anchor_index], position[focus_index])
     end = max(position[anchor_index], position[focus_index])
@@ -196,8 +202,14 @@ def selected_words_anchor_focus(
     layout = detect_column_layout(words)
     anchor_column = _word_column(words[anchor_index], layout)
     focus_column = _word_column(words[focus_index], layout)
-    if layout is not None and anchor_column is not None and anchor_column == focus_column:
-        selected = [word for word in selected if _word_column(word, layout) == anchor_column]
+    if (
+        layout is not None
+        and anchor_column is not None
+        and anchor_column == focus_column
+    ):
+        selected = [
+            word for word in selected if _word_column(word, layout) == anchor_column
+        ]
 
     return _join_selected_words(selected)
 

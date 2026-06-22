@@ -68,7 +68,9 @@ def ask_save_discard_cancel(parent: QWidget | None, text: str) -> str:
     box.setIcon(QMessageBox.Icon.Question)
     box.setText(text)
     save_button = box.addButton(tr("save"), QMessageBox.ButtonRole.AcceptRole)
-    discard_button = box.addButton(tr("discard_changes"), QMessageBox.ButtonRole.DestructiveRole)
+    discard_button = box.addButton(
+        tr("discard_changes"), QMessageBox.ButtonRole.DestructiveRole
+    )
     cancel_button = box.addButton(tr("cancel"), QMessageBox.ButtonRole.RejectRole)
     box.setDefaultButton(cancel_button)
     box.exec()

@@ -56,7 +56,12 @@ def pdf_rect_to_widget(
     )
 
 
-def metrics_from_render(page_width_pt: float, page_height_pt: float, pixmap_width_px: int, pixmap_height_px: int) -> PageDisplayMetrics:
+def metrics_from_render(
+    page_width_pt: float,
+    page_height_pt: float,
+    pixmap_width_px: int,
+    pixmap_height_px: int,
+) -> PageDisplayMetrics:
     """Build display metrics from page and pixmap dimensions."""
     return PageDisplayMetrics(
         page_width_pt=page_width_pt,

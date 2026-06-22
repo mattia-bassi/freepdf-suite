@@ -57,15 +57,32 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
 
     merged["language"] = str(merged.get("language", "en"))
     merged["default_folder"] = str(merged.get("default_folder", ""))
-    merged["recent_files_limit"] = max(5, min(50, int(merged.get("recent_files_limit", 10))))
-    merged["open_last_file_on_startup"] = bool(merged.get("open_last_file_on_startup", False))
+    merged["recent_files_limit"] = max(
+        5, min(50, int(merged.get("recent_files_limit", 10)))
+    )
+    merged["open_last_file_on_startup"] = bool(
+        merged.get("open_last_file_on_startup", False)
+    )
 
     default_zoom = merged.get("default_zoom")
     if default_zoom is None and "zoom_default" in merged:
         zoom_value = float(merged.get("zoom_default", 1.0))
-        default_zoom = f"{zoom_value:g}" if zoom_value not in (0.5, 0.75, 1.25, 1.5, 2.0) else str(zoom_value)
+        default_zoom = (
+            f"{zoom_value:g}"
+            if zoom_value not in (0.5, 0.75, 1.25, 1.5, 2.0)
+            else str(zoom_value)
+        )
     default_zoom = str(default_zoom if default_zoom is not None else "1.0")
-    if default_zoom not in {"fit_page", "fit_width", "0.5", "0.75", "1.0", "1.25", "1.5", "2.0"}:
+    if default_zoom not in {
+        "fit_page",
+        "fit_width",
+        "0.5",
+        "0.75",
+        "1.0",
+        "1.25",
+        "1.5",
+        "2.0",
+    }:
         try:
             default_zoom = f"{float(default_zoom):g}"
         except (TypeError, ValueError):
@@ -80,7 +97,9 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     if view_mode not in {"single_page", "continuous_scroll"}:
         view_mode = "continuous_scroll"
     merged["default_view_mode"] = view_mode
-    merged["show_thumbnails_on_startup"] = bool(merged.get("show_thumbnails_on_startup", True))
+    merged["show_thumbnails_on_startup"] = bool(
+        merged.get("show_thumbnails_on_startup", True)
+    )
     merged["render_dpi"] = _closest_render_dpi(int(merged.get("render_dpi", 96)))
 
     encrypted = str(merged.get("encrypted_pdf", "always_ask"))

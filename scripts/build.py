@@ -30,12 +30,12 @@ WORK_DIR = ROOT / "build" / "pyinstaller"
 
 
 def _require_pyinstaller() -> None:
-    try:
-        import PyInstaller  # noqa: F401
-    except ImportError as exc:  # pragma: no cover
+    import importlib.util
+
+    if importlib.util.find_spec("PyInstaller") is None:  # pragma: no cover
         raise SystemExit(
             "PyInstaller is not installed. Run: poetry add --group dev pyinstaller"
-        ) from exc
+        )
 
 
 def _pyinstaller_cmd() -> list[str]:
@@ -116,7 +116,9 @@ def main() -> int:
     print(f"\nBuild complete: {APP_DIR / 'FreePDFSuite.exe'}")
     print("Edit config/ beside the exe without rebuilding.")
     if not (APP_DIR / "tesseract").is_dir():
-        print("Note: tesseract/ was not bundled — OCR will only work if Tesseract is on PATH.")
+        print(
+            "Note: tesseract/ was not bundled — OCR will only work if Tesseract is on PATH."
+        )
     return 0
 
 

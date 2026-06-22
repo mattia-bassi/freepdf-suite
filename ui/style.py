@@ -15,8 +15,7 @@ SURFACE_GRADIENT = (
     f"stop:0 {NAV_GRADIENT_TOP}, stop:1 {NAV_GRADIENT_BOTTOM})"
 )
 PRIMARY_BTN_GRADIENT = (
-    "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-    "stop:0 #4f93ff, stop:1 #1565C0)"
+    "qlineargradient(x1:0, y1:0, x2:0, y2:1, " "stop:0 #4f93ff, stop:1 #1565C0)"
 )
 
 TEXT_PRIMARY = "#e8e8ea"

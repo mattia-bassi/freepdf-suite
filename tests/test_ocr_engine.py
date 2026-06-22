@@ -16,7 +16,9 @@ def test_check_tesseract_available_returns_bool_without_crashing() -> None:
     assert isinstance(result, bool)
 
 
-def test_bundled_tesseract_path_when_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bundled_tesseract_path_when_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     tesseract_dir = tmp_path / "tesseract"
     tesseract_dir.mkdir()
     exe_name = "tesseract.exe" if sys.platform == "win32" else "tesseract"
@@ -56,7 +58,9 @@ def test_configure_tesseract_uses_bundled_binary(
     assert inner.tesseract_cmd == str(exe_path)
 
 
-def test_configure_tesseract_falls_back_to_system_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configure_tesseract_falls_back_to_system_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ocr_engine._reset_tesseract_cache()
     monkeypatch.setattr(ocr_engine, "bundled_tesseract_path", lambda: None)
 
@@ -118,10 +122,14 @@ def test_default_ocr_dpi_matches_render_pipeline() -> None:
     assert ocr_engine.DEFAULT_OCR_DPI == 150
 
 
-def test_create_temp_ocr_output_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_temp_ocr_output_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(ocr_engine, "ocr_temp_dir", lambda: tmp_path)
     txt_path = ocr_engine.create_temp_ocr_output_path(Path("report.pdf"), "txt")
-    pdf_path = ocr_engine.create_temp_ocr_output_path(Path("report.pdf"), "searchable_pdf")
+    pdf_path = ocr_engine.create_temp_ocr_output_path(
+        Path("report.pdf"), "searchable_pdf"
+    )
     assert txt_path.parent == tmp_path
     assert txt_path.suffix == ".txt"
     assert txt_path.name.startswith("report_ocr_")
@@ -166,7 +174,9 @@ def _patch_tesseract_and_image(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ocr_engine, "Image", mock_image_module)
 
 
-def test_run_ocr_on_pdf_txt_with_mocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_ocr_on_pdf_txt_with_mocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_bytes(b"%PDF-1.4 mock")
     output_path = tmp_path / "sample_ocr.txt"

@@ -5,8 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDragMoveEvent, QDropEvent, QIcon, QKeySequence, QShortcut
+from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QIcon,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -25,7 +34,12 @@ from .config_loader import load_app_config, recent_files_path
 from .file_drop import accept_file_drag, enable_file_drops, path_from_drop
 from .floating_card import FloatingCard
 from .i18n import register_retranslate, tr
-from .message_boxes import ask_save_discard_cancel, ask_yes_no, show_critical, show_information, show_warning
+from .message_boxes import (
+    ask_save_discard_cancel,
+    ask_yes_no,
+    show_critical,
+    show_warning,
+)
 from .page_manager_dialogs import show_merge_pdf_dialog, show_split_pdf_dialog
 from .pdf_reader import PdfReaderWidget
 from .recent_files import RecentFilesStore
@@ -107,7 +121,9 @@ class MainWindow(QMainWindow):
         self._config = load_app_config()
         self._backend = load_backend()
         self._engine = self._make_engine()
-        self._page_manager = PageManager(self._engine) if self._engine is not None else None
+        self._page_manager = (
+            PageManager(self._engine) if self._engine is not None else None
+        )
         self._doc: Any = None
         self._recent = RecentFilesStore(
             recent_files_path(),
@@ -207,7 +223,11 @@ class MainWindow(QMainWindow):
         return tr("ready_open_pdf")
 
     def _update_window_title(self) -> None:
-        prefix = "● " if self._page_manager is not None and self._page_manager.is_dirty else ""
+        prefix = (
+            "● "
+            if self._page_manager is not None and self._page_manager.is_dirty
+            else ""
+        )
         if self._open_filename:
             self.setWindowTitle(f"{prefix}{self._open_filename} — {tr('app_title')}")
         else:
@@ -336,7 +356,9 @@ class MainWindow(QMainWindow):
 
     def _setup_nav_bar(self) -> None:
         """Create the top navigation bar inside its floating card."""
-        self._nav = TopNavBar(self, logo_path=LOGO_PATH if LOGO_PATH.is_file() else None)
+        self._nav = TopNavBar(
+            self, logo_path=LOGO_PATH if LOGO_PATH.is_file() else None
+        )
         self._nav_card.set_content(self._nav)
 
         self._nav.file_clicked.connect(
@@ -512,7 +534,9 @@ class MainWindow(QMainWindow):
             self._help_menu,
         ):
             menu.aboutToShow.connect(
-                lambda _checked=False, bound=menu: QTimer.singleShot(0, lambda: popup_shadow(bound))
+                lambda _checked=False, bound=menu: QTimer.singleShot(
+                    0, lambda: popup_shadow(bound)
+                )
             )
 
     def _build_shortcuts(self) -> None:
@@ -521,7 +545,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Shift+F3"), self, self._on_find_previous)
 
     def _confirm_discard_unsaved(self) -> bool:
-        if self._doc is None or self._page_manager is None or not self._page_manager.is_dirty:
+        if (
+            self._doc is None
+            or self._page_manager is None
+            or not self._page_manager.is_dirty
+        ):
             return True
         filename = self._open_filename or self._doc.path.name
         choice = ask_save_discard_cancel(
@@ -625,7 +653,11 @@ class MainWindow(QMainWindow):
         except PageIndexError as exc:
             show_critical(self, str(exc))
             return
-        new_current = min(current, self._reader.page_count - 1) if current >= page_index else current
+        new_current = (
+            min(current, self._reader.page_count - 1)
+            if current >= page_index
+            else current
+        )
         self._after_page_structure_change(new_current)
 
     def _on_insert_pages(self, at_index: int) -> None:
@@ -678,7 +710,9 @@ class MainWindow(QMainWindow):
         if path:
             self._open_path(Path(path))
 
-    def _friendly_open_error(self, exc: Exception, path: Path, *, had_password: bool) -> str:
+    def _friendly_open_error(
+        self, exc: Exception, path: Path, *, had_password: bool
+    ) -> str:
         code = getattr(exc, "error_code", "")
         if code == "ENCRYPTED_DOCUMENT_ERROR" and had_password:
             return tr("msg_wrong_password")
@@ -714,7 +748,10 @@ class MainWindow(QMainWindow):
                 if ok and pwd:
                     self._open_path(path, password=pwd)
                 return
-            show_critical(self, self._friendly_open_error(exc, path, had_password=password is not None))
+            show_critical(
+                self,
+                self._friendly_open_error(exc, path, had_password=password is not None),
+            )
             return
 
         self._reader.show_document(self._doc)
@@ -813,7 +850,9 @@ class MainWindow(QMainWindow):
         dirty = self._page_manager is not None and self._page_manager.is_dirty
         if self._action_ocr is not None:
             self._action_ocr.setEnabled(enabled)
-            self._action_ocr.setToolTip("" if enabled else tr("ocr_requires_open_document"))
+            self._action_ocr.setToolTip(
+                "" if enabled else tr("ocr_requires_open_document")
+            )
         if self._action_split_pdf is not None:
             self._action_split_pdf.setEnabled(enabled)
         if self._action_save is not None:
@@ -867,7 +906,9 @@ class MainWindow(QMainWindow):
             self._show_status(tr("status_no_matches").replace("{query}", query))
         else:
             self._show_status(
-                tr("status_matches").replace("{count}", str(count)).replace("{query}", query)
+                tr("status_matches")
+                .replace("{count}", str(count))
+                .replace("{query}", query)
             )
         self._update_page_controls()
 

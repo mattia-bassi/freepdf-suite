@@ -67,8 +67,12 @@ class SplitPdfDialog(QDialog):
         self._hint.setWordWrap(True)
         root.addWidget(self._hint)
 
-        self._strip = SplitPdfThumbnailStrip(self, engine=engine, doc=doc, page_count=page_count)
-        self._strip.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._strip = SplitPdfThumbnailStrip(
+            self, engine=engine, doc=doc, page_count=page_count
+        )
+        self._strip.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self._strip.split_changed.connect(self._update_preview)
         root.addWidget(self._strip, 1)
 
@@ -198,7 +202,9 @@ class SplitPdfDialog(QDialog):
                 stem=self._stem,
             )
         except (PageIndexError, ValueError) as exc:
-            show_critical(self, tr("split_pdf_invalid_ranges").replace("{detail}", str(exc)))
+            show_critical(
+                self, tr("split_pdf_invalid_ranges").replace("{detail}", str(exc))
+            )
             return
         except DocumentSaveError as exc:
             show_critical(self, str(exc))
@@ -289,7 +295,10 @@ class MergePdfDialog(QDialog):
             "",
             "PDF (*.pdf);;All files (*)",
         )
-        existing = {self._file_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self._file_list.count())}
+        existing = {
+            self._file_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self._file_list.count())
+        }
         for path in paths:
             if path in existing:
                 continue

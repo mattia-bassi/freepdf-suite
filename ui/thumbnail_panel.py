@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.errors import DocumentOpenError, PageIndexError
 from PySide6.QtCore import Qt, QTimer, Signal, QSize, QPoint
 from PySide6.QtGui import QAction, QIcon, QImage, QPixmap, QTransform
 from PySide6.QtWidgets import (
@@ -44,7 +45,9 @@ class ThumbnailListWidget(QListWidget):
             event.ignore()
             return
 
-        point = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        point = (
+            event.position().toPoint() if hasattr(event, "position") else event.pos()
+        )
         target_item = self.itemAt(point)
         if target_item is None:
             to_row = self.count() - 1
@@ -166,13 +169,15 @@ class ThumbnailPanel(QWidget):
             if item is None:
                 continue
             try:
-                rendered = self._engine.render_page(self._doc, index, dpi=self._thumb_dpi)
+                rendered = self._engine.render_page(
+                    self._doc, index, dpi=self._thumb_dpi
+                )
                 image = QImage.fromData(rendered.image_bytes, "PNG")
                 pixmap = QPixmap.fromImage(image)
                 rotation = 0
                 try:
                     rotation = int(self._engine.page_info(self._doc, index).rotation)
-                except Exception:
+                except (DocumentOpenError, PageIndexError, OSError, RuntimeError):
                     pass
                 if rotation in (90, 180, 270):
                     pixmap = pixmap.transformed(
@@ -180,7 +185,13 @@ class ThumbnailPanel(QWidget):
                         Qt.TransformationMode.SmoothTransformation,
                     )
                 item.setIcon(QIcon(pixmap))
-            except Exception:
+            except (
+                DocumentOpenError,
+                PageIndexError,
+                OSError,
+                RuntimeError,
+                ValueError,
+            ):
                 pass
         if self._pending:
             self._timer.start(10)
@@ -208,9 +219,13 @@ class ThumbnailPanel(QWidget):
         rotate_right = QAction(tr("page_rotate_right"), self)
         rotate_right.triggered.connect(lambda: self.page_rotate_right.emit(page_index))
         insert_pages = QAction(tr("page_insert_here"), self)
-        insert_pages.triggered.connect(lambda: self.page_insert_requested.emit(page_index))
+        insert_pages.triggered.connect(
+            lambda: self.page_insert_requested.emit(page_index)
+        )
         delete_page = QAction(tr("page_delete"), self)
-        delete_page.triggered.connect(lambda: self.page_delete_requested.emit(page_index))
+        delete_page.triggered.connect(
+            lambda: self.page_delete_requested.emit(page_index)
+        )
         menu.addAction(rotate_left)
         menu.addAction(rotate_right)
         menu.addSeparator()

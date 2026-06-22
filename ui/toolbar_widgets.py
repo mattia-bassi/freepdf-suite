@@ -4,8 +4,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QEnterEvent, QFont, QMouseEvent, QPainter, QPen, QPixmap
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import (
+    QColor,
+    QEnterEvent,
+    QFont,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -15,13 +32,17 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QStyledItemDelegate,
-    QStyle,
     QStyleOptionViewItem,
     QWidget,
 )
 
 from .i18n import tr
-from .style import INTERACTION_BORDER, NAV_TAB_ACCENT, NAV_TAB_HOVER_TEXT, NAV_TAB_INACTIVE
+from .style import (
+    INTERACTION_BORDER,
+    NAV_TAB_ACCENT,
+    NAV_TAB_HOVER_TEXT,
+    NAV_TAB_INACTIVE,
+)
 from .visual_effects import (
     accent_tab_glow,
     clear_shadow,
@@ -114,7 +135,9 @@ class NavTabButton(QFrame):
 
     clicked = Signal()
 
-    def __init__(self, icon_kind: str, label: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, icon_kind: str, label: str, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("navTab")
         self.setProperty("active", "false")
@@ -203,7 +226,11 @@ class NavTabUnderline(QFrame):
             return
         top_left = tab.mapTo(self.parentWidget(), QPoint(0, 0))
         parent = self.parentWidget()
-        y = parent.height() - self.height() if parent is not None else top_left.y() + tab.height()
+        y = (
+            parent.height() - self.height()
+            if parent is not None
+            else top_left.y() + tab.height()
+        )
         target = QRect(top_left.x(), y, tab.width(), self.height())
         if not self.isVisible() or not animate:
             self.setGeometry(target)
@@ -225,13 +252,19 @@ class ZoomComboDelegate(QStyledItemDelegate):
         super().__init__(combo)
         self._combo = combo
 
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:  # noqa: ANN001
+    def paint(
+        self, painter: QPainter, option: QStyleOptionViewItem, index
+    ) -> None:  # noqa: ANN001
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
         if index.row() == self._combo.currentIndex():
             painter.fillRect(opt.rect, QColor(NAV_TAB_ACCENT))
-            opt.palette.setColor(opt.palette.ColorRole.Text, QColor(NAV_TAB_ACTIVE_TEXT))
-            opt.palette.setColor(opt.palette.ColorRole.HighlightedText, QColor(NAV_TAB_ACTIVE_TEXT))
+            opt.palette.setColor(
+                opt.palette.ColorRole.Text, QColor(NAV_TAB_ACTIVE_TEXT)
+            )
+            opt.palette.setColor(
+                opt.palette.ColorRole.HighlightedText, QColor(NAV_TAB_ACTIVE_TEXT)
+            )
         super().paint(painter, opt, index)
 
 
@@ -554,7 +587,9 @@ class ReaderToolStrip(QWidget):
             self._zoom_combo.addItem(label, value)
         self._zoom_combo.setItemDelegate(ZoomComboDelegate(self._zoom_combo))
         self._zoom_combo.currentIndexChanged.connect(self._emit_zoom)
-        self._zoom_combo.currentIndexChanged.connect(lambda _i: self._zoom_combo.view().update())
+        self._zoom_combo.currentIndexChanged.connect(
+            lambda _i: self._zoom_combo.view().update()
+        )
         self._wrap_zoom_popup()
 
         root.addWidget(self._fit_group, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -658,7 +693,10 @@ class SearchBar(QWidget):
         self._update_search_icon()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: ANN001, N802
-        if watched is self._edit and event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+        if watched is self._edit and event.type() in (
+            QEvent.Type.FocusIn,
+            QEvent.Type.FocusOut,
+        ):
             self._update_search_icon()
         return super().eventFilter(watched, event)
 
@@ -680,4 +718,3 @@ class SearchBar(QWidget):
     def minimumSizeHint(self):  # noqa: ANN001
         hint = super().minimumSizeHint()
         return QSize(max(200, hint.width()), 34)
-

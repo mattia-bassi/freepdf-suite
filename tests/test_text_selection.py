@@ -10,7 +10,6 @@ from core.pdf_engine import PDFEngine
 from core.text_selection import (
     selected_words,
     selected_words_anchor_focus,
-    word_at_point,
     words_in_selection_rect,
 )
 
@@ -50,7 +49,9 @@ def test_words_in_selection_rect_joins_in_reading_order() -> None:
     ]
     selection = (0.0, 0.0, 100.0, 25.0)
     assert words_in_selection_rect(words, selection) == "Alpha Beta"
-    assert words_in_selection_rect(words, (0.0, 0.0, 100.0, 50.0)) == "Alpha Beta\nGamma"
+    assert (
+        words_in_selection_rect(words, (0.0, 0.0, 100.0, 50.0)) == "Alpha Beta\nGamma"
+    )
 
 
 def test_selected_words_returns_highlight_rects() -> None:
@@ -122,7 +123,9 @@ def test_two_column_anchor_focus_filters_interleaved_ocr_blocks() -> None:
     assert "RightHeader" not in text
     assert "RightBody" not in text
 
-    cross_rects, cross_text = selected_words_anchor_focus(words, (90.0, 106.0), (380.0, 106.0))
+    cross_rects, cross_text = selected_words_anchor_focus(
+        words, (90.0, 106.0), (380.0, 106.0)
+    )
     assert "LeftA" in cross_text
     assert "RightBody" in cross_text
     assert len(cross_rects) == 5
@@ -159,7 +162,11 @@ def test_ocr_cv_anchor_focus_stays_in_left_column() -> None:
     """Regression test for the two-column OCR CV layout."""
     import pytest
 
-    pdf_path = Path(__file__).resolve().parents[1] / "temp" / "CV Bassi Mattia 2026_ocr_2c631891.pdf"
+    pdf_path = (
+        Path(__file__).resolve().parents[1]
+        / "temp"
+        / "CV Bassi Mattia 2026_ocr_2c631891.pdf"
+    )
     if not pdf_path.is_file():
         pytest.skip("OCR CV fixture not available")
 
@@ -224,7 +231,11 @@ def test_widget_drag_rect_clamped_to_pixmap_avoids_full_page_span() -> None:
 
 
 def test_page_geometry_roundtrip_at_multiple_zoom_dpi() -> None:
-    from ui.page_geometry import PageDisplayMetrics, pdf_rect_to_widget, widget_point_to_pdf
+    from ui.page_geometry import (
+        PageDisplayMetrics,
+        pdf_rect_to_widget,
+        widget_point_to_pdf,
+    )
 
     for dpi in (150, 225, 300):
         page_w = 595.0
@@ -235,7 +246,9 @@ def test_page_geometry_roundtrip_at_multiple_zoom_dpi() -> None:
 
         for px, py in ((10.0, 20.0), (pix_w / 2, pix_h / 2), (pix_w - 5, pix_h - 5)):
             pdf_x, pdf_y = widget_point_to_pdf(px, py, metrics, 0.0, 0.0)
-            back_x, back_y, _, _ = pdf_rect_to_widget((pdf_x, pdf_y, pdf_x, pdf_y), metrics, 0.0, 0.0)
+            back_x, back_y, _, _ = pdf_rect_to_widget(
+                (pdf_x, pdf_y, pdf_x, pdf_y), metrics, 0.0, 0.0
+            )
             assert abs(back_x - px) < 0.01
             assert abs(back_y - py) < 0.01
 

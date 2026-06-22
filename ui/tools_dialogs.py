@@ -293,8 +293,12 @@ class OptionsDialog(QDialog):
         self._enable_error_log = QCheckBox("Enable error log", form_host)
         self._enable_error_log.setObjectName("settingsCheckBox")
 
-        form.addRow(_form_label("Pre-render buffer pages", form_host), self._prerender_buffer)
-        form.addRow(_form_label("Rendering quality", form_host), self._rendering_quality_combo)
+        form.addRow(
+            _form_label("Pre-render buffer pages", form_host), self._prerender_buffer
+        )
+        form.addRow(
+            _form_label("Rendering quality", form_host), self._rendering_quality_combo
+        )
         form.addRow("", self._enable_error_log)
 
         layout.addWidget(form_host)
@@ -330,19 +334,33 @@ class OptionsDialog(QDialog):
         _set_combo_value(self._theme_combo, config.get("theme", "dark"))
         self._default_folder.setText(str(config.get("default_folder", "")))
         self._recent_limit.setValue(int(config.get("recent_files_limit", 10)))
-        self._open_last_file.setChecked(bool(config.get("open_last_file_on_startup", False)))
+        self._open_last_file.setChecked(
+            bool(config.get("open_last_file_on_startup", False))
+        )
 
-        _set_combo_value(self._default_zoom_combo, str(config.get("default_zoom", "1.0")))
-        _set_combo_value(self._view_mode_combo, config.get("default_view_mode", "continuous_scroll"))
-        self._show_thumbnails.setChecked(bool(config.get("show_thumbnails_on_startup", True)))
+        _set_combo_value(
+            self._default_zoom_combo, str(config.get("default_zoom", "1.0"))
+        )
+        _set_combo_value(
+            self._view_mode_combo, config.get("default_view_mode", "continuous_scroll")
+        )
+        self._show_thumbnails.setChecked(
+            bool(config.get("show_thumbnails_on_startup", True))
+        )
         _set_combo_value(self._render_dpi_combo, int(config.get("render_dpi", 96)))
 
-        _set_combo_value(self._encrypted_pdf_combo, config.get("encrypted_pdf", "always_ask"))
+        _set_combo_value(
+            self._encrypted_pdf_combo, config.get("encrypted_pdf", "always_ask")
+        )
         _set_combo_value(self._p7m_combo, config.get("p7m_files", "always_extract"))
-        _set_combo_value(self._missing_fonts_combo, config.get("missing_fonts", "use_substitutes"))
+        _set_combo_value(
+            self._missing_fonts_combo, config.get("missing_fonts", "use_substitutes")
+        )
 
         self._prerender_buffer.setValue(int(config.get("prerender_buffer_pages", 2)))
-        _set_combo_value(self._rendering_quality_combo, config.get("rendering_quality", "normal"))
+        _set_combo_value(
+            self._rendering_quality_combo, config.get("rendering_quality", "normal")
+        )
         self._enable_error_log.setChecked(bool(config.get("enable_error_log", False)))
 
     def _collect_config(self) -> dict[str, Any]:

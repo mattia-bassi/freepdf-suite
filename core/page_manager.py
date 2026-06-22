@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import fitz
 
-from .errors import DocumentOpenError, DocumentSaveError, PageIndexError
+from .errors import DocumentOpenError, PageIndexError
 from .models import Document
 
 if TYPE_CHECKING:
@@ -34,7 +34,9 @@ class PageManager:
         """Reorder a page from ``from_index`` to ``to_index`` (0-based)."""
         count = self._engine.page_count(doc)
         if from_index < 0 or from_index >= count or to_index < 0 or to_index >= count:
-            raise PageIndexError(f"Invalid page move ({from_index} -> {to_index}) for {count} pages.")
+            raise PageIndexError(
+                f"Invalid page move ({from_index} -> {to_index}) for {count} pages."
+            )
         if from_index == to_index:
             return
         order = list(range(count))
@@ -93,7 +95,9 @@ class PageManager:
                         f"Invalid source page range ({from_page}, {to_page}) for {src.page_count} pages."
                     )
             handle = self._engine._handle(doc)
-            handle.insert_pdf(src, from_page=from_page, to_page=to_page, start_at=at_index)
+            handle.insert_pdf(
+                src, from_page=from_page, to_page=to_page, start_at=at_index
+            )
             inserted = to_page - from_page + 1
         finally:
             src.close()
@@ -113,7 +117,9 @@ class PageManager:
         """Export page ranges as separate PDF files (0-based inclusive ranges)."""
         return self._engine.split_document(doc, ranges, output_dir, stem=stem)
 
-    def merge_documents(self, file_paths: list[str | Path], output_path: str | Path) -> Path:
+    def merge_documents(
+        self, file_paths: list[str | Path], output_path: str | Path
+    ) -> Path:
         """Combine multiple PDFs into one file in the given order."""
         return self._engine.merge_documents(file_paths, output_path)
 
@@ -150,7 +156,9 @@ def parse_page_ranges(text: str, page_count: int) -> list[tuple[int, int]]:
     return ranges
 
 
-def ranges_from_split_points(page_count: int, split_after: list[int]) -> list[tuple[int, int]]:
+def ranges_from_split_points(
+    page_count: int, split_after: list[int]
+) -> list[tuple[int, int]]:
     """Build 0-based inclusive ranges from split points after page indices."""
     if page_count <= 0:
         raise PageIndexError("Document has no pages.")

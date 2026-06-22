@@ -138,7 +138,7 @@ def _probe_tesseract(binary: Path | None) -> bool:
     try:
         pytesseract.get_tesseract_version()
         return True
-    except Exception:
+    except (OSError, RuntimeError, AttributeError):
         return False
 
 
@@ -184,7 +184,7 @@ def _raw_installed_language_codes() -> list[str]:
         langs = pytesseract.get_languages(config="")
         cleaned = sorted({code.strip() for code in langs if code and code.strip()})
         return cleaned if cleaned else list(FALLBACK_LANGUAGES)
-    except Exception:
+    except (OSError, RuntimeError, AttributeError):
         return list(FALLBACK_LANGUAGES)
 
 
@@ -266,10 +266,10 @@ def _add_invisible_text_layer(
 
         left = float(data["left"][index])
         top = float(data["top"][index])
-        width = float(data["width"][index])
+        float(data["width"][index])
         height = float(data["height"][index])
         x0 = left * scale_x
-        y0 = top * scale_y
+        top * scale_y
         y1 = (top + height) * scale_y
         fontsize = max(4.0, height * scale_y * 0.85)
         page.insert_text(  # type: ignore[union-attr]
@@ -316,9 +316,13 @@ def _write_searchable_pdf_output(
             source_page = doc.load_page(index)
             page_rect = source_page.rect
             pixmap = source_page.get_pixmap(dpi=dpi, alpha=False)
-            image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+            image = Image.frombytes(
+                "RGB", (pixmap.width, pixmap.height), pixmap.samples
+            )
 
-            new_page = output_doc.new_page(width=page_rect.width, height=page_rect.height)
+            new_page = output_doc.new_page(
+                width=page_rect.width, height=page_rect.height
+            )
             new_page.insert_image(new_page.rect, pixmap=pixmap)
             _add_invisible_text_layer(
                 new_page,
@@ -377,7 +381,7 @@ def run_ocr_on_pdf(
             )
     except OcrError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
         raise OcrError(f"OCR failed: {exc}") from exc
     finally:
         doc.close()

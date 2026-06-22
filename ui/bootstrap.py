@@ -26,7 +26,9 @@ def init_windows_app_id() -> None:
     if sys.platform == "win32":
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("FreePDFSuite.App.1.0")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "FreePDFSuite.App.1.0"
+        )
 
 
 def load_backend() -> dict[str, Any]:

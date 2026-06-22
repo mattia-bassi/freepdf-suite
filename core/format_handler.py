@@ -17,6 +17,7 @@ _PDF_MAGIC = b"%PDF-"
 
 class FormatHandler:
     def detect_format(self, path: str | Path) -> DocumentFormat:
+        """Classify a file as PDF, PDF/A, P7M, or unknown from its bytes and extension."""
         path = Path(path)
         name = path.name.lower()
         if name.endswith(".p7m"):
@@ -26,12 +27,15 @@ class FormatHandler:
         except OSError as exc:
             raise UnsupportedFormatError(f"Cannot read {path}: {exc}") from exc
         if head.startswith(_PDF_MAGIC):
-            return DocumentFormat.PDF_A if self._looks_pdfa(head) else DocumentFormat.PDF
+            return (
+                DocumentFormat.PDF_A if self._looks_pdfa(head) else DocumentFormat.PDF
+            )
         if b"%PDF-" in head:  # signed/wrapped PDF whose header is offset
             return DocumentFormat.PDF
         return DocumentFormat.UNKNOWN
 
     def is_pdfa(self, path: str | Path) -> bool:
+        """Return True when the file contains PDF/A identification markers."""
         path = Path(path)
         try:
             data = path.read_bytes()
@@ -60,7 +64,7 @@ class FormatHandler:
                 return bytes(data)
         except ImportError:
             pass  # fall through to byte-scan heuristic
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
             pass  # malformed CMS — try embedded PDF scan below
 
         start = raw.find(_PDF_MAGIC)
@@ -73,6 +77,7 @@ class FormatHandler:
     def to_pdfa(
         self, src: str | Path, dst: str | Path, *, conformance: str = "pdfa-2b"
     ) -> None:
+        """Raise ``PDFAConversionError`` until Wave-3 implements real conversion."""
         # CONTRACT-DEVIATION: real PDF/A conversion is Wave-3 (contract §10.6).
         raise PDFAConversionError(
             f"PDF/A conversion ({conformance}) not implemented until Wave-3."

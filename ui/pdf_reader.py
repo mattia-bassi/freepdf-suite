@@ -6,7 +6,15 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QDragEnterEvent, QDragMoveEvent, QDropEvent, QImage, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import (
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QImage,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
@@ -23,7 +31,6 @@ from .page_geometry import (
     metrics_from_render,
     pdf_rect_to_widget,
     widget_drag_rect_to_pdf,
-    widget_point_to_pdf,
     widget_point_to_pdf_clamped,
 )
 from .page_render_queue import PageRenderQueue
@@ -56,7 +63,9 @@ class PdfReaderWidget(QWidget):
     file_dropped = Signal(object)
     fit_mode_changed = Signal(object)
 
-    def __init__(self, config: dict[str, Any] | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, config: dict[str, Any] | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         enable_file_drops(self)
 
@@ -91,13 +100,17 @@ class PdfReaderWidget(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self._scroll.viewport().installEventFilter(self)
 
         self._container = QWidget()
         self._container.setObjectName("pdfViewerCanvas")
         self._layout = QVBoxLayout(self._container)
-        self._layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self._layout.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
         self._layout.setSpacing(16)
         self._scroll.setWidget(self._container)
         root.addWidget(self._scroll, 1)
@@ -255,7 +268,9 @@ class PdfReaderWidget(QWidget):
             return
         self._thumbs.refresh(self._engine, self._doc)
         self._invalidate_render_cache()
-        self._schedule_visible_render(front=page_index if page_index is not None else self._current_page)
+        self._schedule_visible_render(
+            front=page_index if page_index is not None else self._current_page
+        )
 
     def go_to_page(self, page_index: int) -> None:
         if page_index < 0 or page_index >= self.page_count:
@@ -329,7 +344,9 @@ class PdfReaderWidget(QWidget):
         self._go_to_hit(self._active_hit)
         return True
 
-    def words_for_page(self, page_index: int) -> list[tuple[tuple[float, float, float, float], str]]:
+    def words_for_page(
+        self, page_index: int
+    ) -> list[tuple[tuple[float, float, float, float], str]]:
         if self._engine is None or self._doc is None:
             return []
         try:
@@ -337,15 +354,21 @@ class PdfReaderWidget(QWidget):
         except Exception:
             return []
 
-    def widget_point_to_pdf(self, page_index: int, x: float, y: float) -> tuple[float, float]:
+    def widget_point_to_pdf(
+        self, page_index: int, x: float, y: float
+    ) -> tuple[float, float]:
         metrics, origin_x, origin_y, pix_w, pix_h = self._page_display_state(page_index)
-        return widget_point_to_pdf_clamped(x, y, metrics, origin_x, origin_y, pix_w, pix_h)
+        return widget_point_to_pdf_clamped(
+            x, y, metrics, origin_x, origin_y, pix_w, pix_h
+        )
 
     def widget_drag_rect_to_pdf(
         self, page_index: int, x0: float, y0: float, x1: float, y1: float
     ) -> tuple[float, float, float, float]:
         metrics, origin_x, origin_y, pix_w, pix_h = self._page_display_state(page_index)
-        return widget_drag_rect_to_pdf(x0, y0, x1, y1, metrics, origin_x, origin_y, pix_w, pix_h)
+        return widget_drag_rect_to_pdf(
+            x0, y0, x1, y1, metrics, origin_x, origin_y, pix_w, pix_h
+        )
 
     def pdf_rect_to_widget(
         self, page_index: int, rect: tuple[float, float, float, float]
@@ -353,19 +376,32 @@ class PdfReaderWidget(QWidget):
         metrics, origin_x, origin_y, _pw, _ph = self._page_display_state(page_index)
         return pdf_rect_to_widget(rect, metrics, origin_x, origin_y)
 
-    def _page_display_state(self, page_index: int) -> tuple[PageDisplayMetrics, float, float, int, int]:
+    def _page_display_state(
+        self, page_index: int
+    ) -> tuple[PageDisplayMetrics, float, float, int, int]:
         label = self._page_labels.get(page_index)
         if label is None:
             dpi = self._effective_dpi()
             pix_w = max(1, int(612 * dpi / 72))
             pix_h = max(1, int(792 * dpi / 72))
-            return PageDisplayMetrics(612.0, 792.0, pix_w, pix_h), 0.0, 0.0, pix_w, pix_h
+            return (
+                PageDisplayMetrics(612.0, 792.0, pix_w, pix_h),
+                0.0,
+                0.0,
+                pix_w,
+                pix_h,
+            )
 
         pixmap = label.pixmap()
         if pixmap is None or pixmap.isNull():
             pixmap = self._page_pixmaps.get(page_index)
 
-        if pixmap is not None and not pixmap.isNull() and self._engine is not None and self._doc is not None:
+        if (
+            pixmap is not None
+            and not pixmap.isNull()
+            and self._engine is not None
+            and self._doc is not None
+        ):
             info = self._engine.page_info(self._doc, page_index)
             metrics = metrics_from_render(
                 info.width,
@@ -388,7 +424,9 @@ class PdfReaderWidget(QWidget):
     def _fallback_page_metrics(self, page_index: int) -> PageDisplayMetrics:
         dpi = self._effective_dpi()
         if self._engine is None or self._doc is None:
-            return PageDisplayMetrics(612.0, 792.0, max(1, int(612 * dpi / 72)), max(1, int(792 * dpi / 72)))
+            return PageDisplayMetrics(
+                612.0, 792.0, max(1, int(612 * dpi / 72)), max(1, int(792 * dpi / 72))
+            )
         info = self._engine.page_info(self._doc, page_index)
         return metrics_from_render(
             info.width,
@@ -397,12 +435,20 @@ class PdfReaderWidget(QWidget):
             max(1, int(info.height * dpi / 72.0)),
         )
 
-    def _pixmap_origin(self, label: PageViewLabel, pixmap: QPixmap | None) -> tuple[float, float]:
+    def _pixmap_origin(
+        self, label: PageViewLabel, pixmap: QPixmap | None
+    ) -> tuple[float, float]:
         if pixmap is None or pixmap.isNull():
             return 0.0, 0.0
         contents = label.contentsRect()
-        origin_x = float(contents.x()) + (float(contents.width()) - float(pixmap.width())) / 2.0
-        origin_y = float(contents.y()) + (float(contents.height()) - float(pixmap.height())) / 2.0
+        origin_x = (
+            float(contents.x())
+            + (float(contents.width()) - float(pixmap.width())) / 2.0
+        )
+        origin_y = (
+            float(contents.y())
+            + (float(contents.height()) - float(pixmap.height())) / 2.0
+        )
         return origin_x, origin_y
 
     def clear_selection(self, *, except_page: int | None = None) -> None:
@@ -632,7 +678,9 @@ class PdfReaderWidget(QWidget):
                     label.setMinimumHeight(400)
         self._schedule_visible_render(front=self._current_page)
 
-    def _highlights_for_page(self, page_index: int) -> list[tuple[float, float, float, float]]:
+    def _highlights_for_page(
+        self, page_index: int
+    ) -> list[tuple[float, float, float, float]]:
         if not self._search_query:
             return []
         return [hit.rect for hit in self._search_hits if hit.page_index == page_index]

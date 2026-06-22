@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.errors import DocumentOpenError, PageIndexError
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -89,7 +89,11 @@ class SplitPointWidget(QWidget):
         font = painter.font()
         font.setPointSize(11 if self._active or self._hovered else 9)
         painter.setFont(font)
-        painter.drawText(self.rect(), int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter), "✂")
+        painter.drawText(
+            self.rect(),
+            int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+            "✂",
+        )
         painter.end()
 
 
@@ -183,7 +187,9 @@ class SplitPdfThumbnailStrip(QWidget):
             self._timer.start(0)
 
     def active_split_points(self) -> list[int]:
-        return sorted(index for index, widget in self._splitters.items() if widget.is_active())
+        return sorted(
+            index for index, widget in self._splitters.items() if widget.is_active()
+        )
 
     def _on_split_toggled(self, _index: int) -> None:
         self.split_changed.emit()
@@ -200,7 +206,13 @@ class SplitPdfThumbnailStrip(QWidget):
                 rendered = self._engine.render_page(self._doc, index, dpi=48)
                 image = QImage.fromData(rendered.image_bytes, "PNG")
                 self._thumbs[index].set_pixmap(QPixmap.fromImage(image))
-            except Exception:
+            except (
+                DocumentOpenError,
+                PageIndexError,
+                OSError,
+                RuntimeError,
+                ValueError,
+            ):
                 pass
         if self._pending:
             self._timer.start(10)

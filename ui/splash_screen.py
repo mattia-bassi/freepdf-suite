@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import QApplication, QSplashScreen
 
 from .bootstrap import LOGO_PATH
 from .i18n import tr
-from .style import BG_CONTENT, BG_DARKEST, INTERACTION_BORDER, TEXT_PRIMARY, TEXT_SECONDARY
+from .style import (
+    BG_CONTENT,
+    BG_DARKEST,
+    INTERACTION_BORDER,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 
 
 def _build_splash_pixmap() -> QPixmap:
@@ -80,7 +94,10 @@ class BrandedSplashScreen(QSplashScreen):
 
     def __init__(self) -> None:
         pixmap = _build_splash_pixmap()
-        super().__init__(pixmap, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
+        super().__init__(
+            pixmap,
+            Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint,
+        )
         self.setMask(pixmap.mask())
 
     @classmethod

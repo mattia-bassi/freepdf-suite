@@ -19,6 +19,7 @@ from .errors import (
     DocumentOpenError,
     DocumentSaveError,
     EncryptedDocumentError,
+    P7MExtractionError,
     PageIndexError,
 )
 from .format_handler import FormatHandler
@@ -73,7 +74,7 @@ def _search_flags() -> int | None:
         from pymupdf import mupdf
 
         return int(mupdf.FZ_SEARCH_IGNORE_CASE | mupdf.FZ_SEARCH_IGNORE_DIACRITICS)
-    except Exception:  # pragma: no cover
+    except (ImportError, AttributeError, TypeError, ValueError):  # pragma: no cover
         return None
 
 
@@ -86,6 +87,7 @@ class PDFEngine:
         self._formats = FormatHandler()
 
     def open(self, path: str | Path, password: str | None = None) -> Document:
+        """Open a PDF or P7M file from disk and return a ``Document`` handle."""
         _require_fitz()
         path = Path(path)
         if not path.exists():
@@ -95,13 +97,15 @@ class PDFEngine:
         if fmt == DocumentFormat.P7M:
             try:
                 pdf_bytes = self._formats.extract_p7m(path)
-            except Exception as exc:  # noqa: BLE001
-                raise DocumentOpenError(f"Could not extract P7M payload: {exc}") from exc
+            except (P7MExtractionError, OSError, ValueError, TypeError) as exc:
+                raise DocumentOpenError(
+                    f"Could not extract P7M payload: {exc}"
+                ) from exc
             return self._open_stream(pdf_bytes, path, password)
 
         try:
             handle = fitz.open(path)  # type: ignore[union-attr]
-        except Exception as exc:  # noqa: BLE001 - normalize to our hierarchy
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             raise DocumentOpenError(f"Could not open {path}: {exc}") from exc
 
         return self._document_from_handle(handle, path, password, fmt)
@@ -114,12 +118,13 @@ class PDFEngine:
         return self._open_stream(data, Path(label), password)
 
     def close(self, doc: Document) -> None:
+        """Release the underlying PyMuPDF handle for ``doc``."""
         handle = doc._handle
         if handle is not None:
             try:
                 getattr(handle, "close", lambda: None)()
-            except Exception:  # noqa: BLE001 - close is best-effort
-                pass
+            except (OSError, RuntimeError, AttributeError):
+                pass  # close is best-effort
             doc._handle = None
 
     def save(
@@ -130,19 +135,22 @@ class PDFEngine:
         incremental: bool = False,
         garbage: int = 1,
     ) -> None:
+        """Persist ``doc`` to ``path`` with optional incremental save."""
         handle = self._handle(doc)
         path = Path(path)
         try:
             handle.save(
                 str(path), incremental=incremental, garbage=garbage, deflate=True
             )
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             raise DocumentSaveError(f"Could not save {path}: {exc}") from exc
 
     def page_count(self, doc: Document) -> int:
+        """Return the number of pages in ``doc``."""
         return self._handle(doc).page_count
 
     def page_info(self, doc: Document, page_index: int) -> PageInfo:
+        """Return size and rotation metadata for one page."""
         page = self._page(doc, page_index)
         rect = page.rect
         return PageInfo(
@@ -161,6 +169,7 @@ class PDFEngine:
         highlight_rects: list[Rect] | None = None,
         active_highlight: int | None = None,
     ) -> RenderedPage:
+        """Rasterize one page to PNG bytes at the given DPI."""
         page = self._page(doc, page_index)
         pix = page.get_pixmap(dpi=dpi)
         image_bytes = pix.tobytes("png")
@@ -240,6 +249,7 @@ class PDFEngine:
         return outputs
 
     def extract_text(self, doc: Document, page_index: int) -> str:
+        """Return plain text extracted from one page."""
         return self._page(doc, page_index).get_text("text")
 
     def extract_all_text(self, doc: Document) -> str:
@@ -253,7 +263,9 @@ class PDFEngine:
         """Combine multiple PDFs into a single file."""
         _require_fitz()
         if len(paths) < 2:
-            raise DocumentSaveError("merge_documents requires at least two input files.")
+            raise DocumentSaveError(
+                "merge_documents requires at least two input files."
+            )
         output = Path(output)
         merged = fitz.open()  # type: ignore[union-attr]
         try:
@@ -269,7 +281,7 @@ class PDFEngine:
             merged.save(str(output), garbage=4, deflate=True)
         except DocumentOpenError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             raise DocumentSaveError(f"Could not merge into {output}: {exc}") from exc
         finally:
             merged.close()
@@ -318,7 +330,7 @@ class PDFEngine:
         handle = self._handle(doc)
         try:
             handle.save(str(output), garbage=garbage, deflate=deflate, clean=True)
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             raise DocumentSaveError(f"Could not compress to {output}: {exc}") from exc
         return output
 
@@ -341,7 +353,7 @@ class PDFEngine:
                 user_pw=user_password,
                 owner_pw=owner,
             )
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             raise DocumentSaveError(f"Could not encrypt to {output}: {exc}") from exc
         return output
 
@@ -353,6 +365,7 @@ class PDFEngine:
         handle.select(order)
 
     def rotate_page(self, doc: Document, page_index: int, degrees: int) -> None:
+        """Set absolute rotation for one page (0, 90, 180, or 270 degrees)."""
         page = self._page(doc, page_index)
         if degrees not in (0, 90, 180, 270):
             raise PageIndexError("Rotation must be 0, 90, 180, or 270 degrees.")
@@ -374,6 +387,7 @@ class PDFEngine:
         page.insert_text((rect.x0 + x, rect.y0 + y), text, fontsize=fontsize)
 
     def delete_pages(self, doc: Document, page_indices: list[int]) -> None:
+        """Remove pages by 0-based index; refuses to delete every page."""
         handle = self._handle(doc)
         to_drop = set(page_indices)
         keep = [i for i in range(handle.page_count) if i not in to_drop]
@@ -382,15 +396,14 @@ class PDFEngine:
         handle.select(keep)
 
     def extract_metadata(self, doc: Document) -> DocumentMetadata:
+        """Read title, author, and other document metadata."""
         return self._read_metadata(self._handle(doc))
 
     # --- internals ----------------------------------------------------------
-    def _open_stream(
-        self, data: bytes, label: Path, password: str | None
-    ) -> Document:
+    def _open_stream(self, data: bytes, label: Path, password: str | None) -> Document:
         try:
             handle = fitz.open(stream=data, filetype="pdf")  # type: ignore[union-attr]
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError, ValueError, TypeError) as exc:
             raise DocumentOpenError(f"Could not open {label}: {exc}") from exc
         return self._document_from_handle(handle, label, password, DocumentFormat.PDF)
 

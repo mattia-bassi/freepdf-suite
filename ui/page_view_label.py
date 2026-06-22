@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPointF, Qt, QRectF, Signal
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QMouseEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QGuiApplication,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+)
 from PySide6.QtWidgets import QLabel, QMenu
 
 from core.text_selection import Rect, selected_words_anchor_focus
@@ -108,7 +116,9 @@ class PageViewLabel(QLabel):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._press_pos is not None:
             if self._dragging and self._drag_pos is not None:
-                anchor, focus = self._selection_points_pdf(self._press_pos, self._drag_pos)
+                anchor, focus = self._selection_points_pdf(
+                    self._press_pos, self._drag_pos
+                )
                 words = self._words()
                 rects, text = selected_words_anchor_focus(words, anchor, focus)
                 self._highlight_rects = rects
@@ -166,10 +176,16 @@ class PageViewLabel(QLabel):
             self._drag_rects = []
             return
         selection = self._selection_points_pdf(self._press_pos, self._drag_pos)
-        rects, _text = selected_words_anchor_focus(self._words(), selection[0], selection[1])
+        rects, _text = selected_words_anchor_focus(
+            self._words(), selection[0], selection[1]
+        )
         self._drag_rects = rects
 
-    def _selection_points_pdf(self, start: QPointF, end: QPointF) -> tuple[tuple[float, float], tuple[float, float]]:
-        anchor = self._reader.widget_point_to_pdf(self._page_index, start.x(), start.y())
+    def _selection_points_pdf(
+        self, start: QPointF, end: QPointF
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        anchor = self._reader.widget_point_to_pdf(
+            self._page_index, start.x(), start.y()
+        )
         focus = self._reader.widget_point_to_pdf(self._page_index, end.x(), end.y())
         return anchor, focus
